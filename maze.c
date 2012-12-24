@@ -83,7 +83,7 @@ int set_node_to_net(NODE node, int newnet, POINT *pushlist, SEG bbox)
     SEG seg;
     NODE n2;
 
-    // Process tap points of the node
+    /* Process tap points of the node */
 
     for (ntap = node->taps; ntap; ntap = ntap->next) {
        lay = ntap->layer;
