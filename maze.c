@@ -38,7 +38,7 @@ make_new_pr(x, y, lay)
 
    PRind++;
 
-   /* Check bounds on PRind */
+   // Check bounds on PRind
    if (PRind >= PRindMAX) return -1;
 
    /* Create new potential route structure */
