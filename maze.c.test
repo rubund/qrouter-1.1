@@ -44,8 +44,10 @@ make_new_pr(x, y, lay)
    /* Create new potential route structure */
    k = PRind;
    Pr[k].pred = 0;
+   Pr[k].alt = 0;
    Pr[k].flags = 0;
    Pr[k].cost = 0;
+   Pr[k].altcost = 0;
    Pr[k].x1 = x;
    Pr[k].y1 = y;
    Pr[k].layer = lay;
@@ -460,6 +462,7 @@ int eval_pt(int x, int y, int lay, int thisindex, u_char stage)
        if (k < 0) return k;
        Pr[k].flags = conflict;
        Pr[k].cost = MAXRT;
+       Pr[k].altcost = MAXRT;
 
        if (Verbose > 0) {
 	  fprintf(stdout, "PRind = %d at (%d %d %d)\n", k, x, y, lay);
@@ -512,6 +515,10 @@ int eval_pt(int x, int y, int lay, int thisindex, u_char stage)
        thiscost += ConflictCost;	// For 2nd stage routes
 
     if (thiscost < Pr[k].cost) {
+       if ((Pr[k].cost < Pr[k].altcost) && (Pr[k].pred != thisindex)) {
+          Pr[k].alt = Pr[k].pred;	// Keep last best route as alternate
+	  Pr[k].altcost = Pr[k].cost;
+       }
        Pr[k].pred = thisindex;
        Pr[k].cost = thiscost;
        Pr[k].flags &= ~PR_PROCESSED;	// Need to reprocess this node
@@ -520,6 +527,10 @@ int eval_pt(int x, int y, int lay, int thisindex, u_char stage)
 	  fprintf(stdout, "New cost %d at (%d %d %d)\n", thiscost, x, y, lay);
        }
        return 1;
+    }
+    else if ((thiscost < Pr[k].altcost) && (Pr[k].pred != thisindex)) {
+       Pr[k].alt = thisindex;		// Alternate route has equal cost
+       Pr[k].altcost = thiscost;
     }
     return 0;	// New position did not get a lower cost
 
@@ -575,18 +586,11 @@ int commit_proute(ROUTE rt, u_char stage)
    lseg = (SEG)NULL;
 
    // TEST:  Walk through the solution, and look for stacked vias.  When
-   // found, look for an alternative path that avoids the stack.
+   // found, swap the "pred" and "alt" pointers, then try again.
 
    if (NoStackedContacts == 1) {
       int tind, ppre, stacks = 1;
-      int cx, cy, cl, mincost;
-      int dx, dy, dl, minx, miny, ci, ci2;
-
-      // Fill in information for final route point
-      Pr[index].x1 = xn;
-      Pr[index].y1 = yn;
-      Pr[index].layer = ll;
-
+      int alt;
       while (stacks != 0) {
 	 stacks = 0;
 	 tind = index;
@@ -597,190 +601,29 @@ int commit_proute(ROUTE rt, u_char stage)
 	    if (Pr[tind].layer != Pr[prev].layer &&
 		Pr[prev].layer != Pr[ppre].layer) {
 	       stacks++;
-
-	       // Try to move the second contact in the path
-	       cx = Pr[prev].x1;
-	       cy = Pr[prev].y1;
-	       cl = Pr[prev].layer;
-	       mincost = MAXRT;
-	       dl = Pr[ppre].layer;
-
-	       // Check all four positions around the contact for the
-	       // lowest cost, and make sure the position below that
-	       // is available.
-	       dx = cx + 1;	// Check to the right
-	       ci = Obs2[cl][OGRID(dx, cy, cl)];
-	       if (ci & RTFLAG) {
-		  ci &= ~RTFLAG;
-		  if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	             ci2 = Obs2[dl][OGRID(dx, cy, dl)];
-		     if (ci2 & RTFLAG) {
-			ci2 &= ~RTFLAG;
-		        if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		           mincost = Pr[ci].cost;
-		           minx = dx;
-		           miny = cy;
-			}
-		     }
-		  }
-	       }
-	       dx = cx - 1;	// Check to the left
-	       ci = Obs2[cl][OGRID(dx, cy, cl)];
-	       if (ci & RTFLAG) {
-		  ci &= ~RTFLAG;
-		  if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	             ci2 = Obs2[dl][OGRID(dx, cy, dl)];
-		     if (ci2 & RTFLAG) {
-			ci2 &= ~RTFLAG;
-		        if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		           mincost = Pr[ci].cost;
-		           minx = dx;
-		           miny = cy;
-			}
-		     }
-		  }
-	       }
-
-	       dy = cy + 1;	// Check up
-	       ci = Obs2[cl][OGRID(cx, dy, cl)];
-	       if (ci & RTFLAG) {
-		  ci &= ~RTFLAG;
-		  if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	             ci2 = Obs2[dl][OGRID(cx, dy, dl)];
-		     if (ci2 & RTFLAG) {
-			ci2 &= ~RTFLAG;
-		        if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		           mincost = Pr[ci].cost;
-		           minx = cx;
-		           miny = dy;
-			}
-		     }
-		  }
-	       }
-
-	       dy = cy - 1;	// Check down
-	       ci = Obs2[cl][OGRID(cx, dy, cl)];
-	       if (ci & RTFLAG) {
-		  ci &= ~RTFLAG;
-		  if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	             ci2 = Obs2[dl][OGRID(cx, dy, dl)];
-		     if (ci2 & RTFLAG) {
-		        ci2 &= ~RTFLAG;
-		        if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		           mincost = Pr[ci].cost;
-		           minx = cx;
-		           miny = dy;
-			}
-		     }
-		  }
-	       }
-
-	       // Was there an available route?  If so, modify "pred"
-	       // records to route through this alternate path.  If not,
-	       // then try to move the first contact instead.
-
-	       if (mincost < MAXRT) {
-	          ci = Obs2[cl][OGRID(minx, miny, cl)] & ~RTFLAG;
-		  Pr[prev].pred = ci;
-	          ci2 = Obs2[dl][OGRID(minx, miny, dl)] & ~RTFLAG;
-		  Pr[ci].pred = ci2;
-		  if (Pr[ppre].pred != ci2) {
-		     Pr[ci2].pred = ppre;
-		  }
-	       }
-	       else {
-	          cx = Pr[tind].x1;
-	          cy = Pr[tind].y1;
-	          cl = Pr[tind].layer;
-	          mincost = MAXRT;
-	          dl = Pr[prev].layer;
-
-	          dx = cx + 1;	// Check to the right
-	          ci = Obs2[cl][OGRID(dx, cy, cl)];
-		  if (ci & RTFLAG) {
-		     ci &= ~RTFLAG;
-		     if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	                ci2 = Obs2[dl][OGRID(dx, cy, dl)];
-			if (ci2 & RTFLAG) {
-			   ci2 &= ~RTFLAG;
-		           if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		              mincost = Pr[ci].cost;
-		              minx = dx;
-		              miny = cy;
-			   }
-		        }
-		     }
-	          }
-
-	          dx = cx - 1;	// Check to the left
-	          ci = Obs2[cl][OGRID(dx, cy, cl)];
-		  if (ci & RTFLAG) {
-		     ci &= ~RTFLAG;
-		     if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	                ci2 = Obs2[dl][OGRID(dx, cy, dl)];
-			if (ci2 & RTFLAG) {
-			   ci2 &= ~RTFLAG;
-		           if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		              mincost = Pr[ci].cost;
-		              minx = dx;
-		              miny = cy;
-			   }
-		        }
-		     }
-	          }
-
-	          dy = cy + 1;	// Check up
-	          ci = Obs2[cl][OGRID(cx, dy, cl)];
-		  if (ci & RTFLAG) {
-		     ci &= ~RTFLAG;
-		     if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	                ci2 = Obs2[dl][OGRID(cx, dy, dl)];
-			if (ci2 & RTFLAG) {
-			   ci2 &= ~RTFLAG;
-		           if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		              mincost = Pr[ci].cost;
-		              minx = cx;
-		              miny = dy;
-			   }
-		        }
-		     }
-	          }
-
-	          dy = cy - 1;	// Check down
-	          ci = Obs2[cl][OGRID(cx, dy, cl)];
-		  if (ci & RTFLAG) {
-		     ci &= ~RTFLAG;
-		     if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	                ci2 = Obs2[dl][OGRID(cx, dy, dl)];
-			if (ci2 & RTFLAG) {
-			   ci2 &= ~RTFLAG;
-		           if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		              mincost = Pr[ci].cost;
-		              minx = cx;
-		              miny = dy;
-			   }
-		        }
-		     }
-	          }
-
-		  if (mincost < MAXRT) {
-	             ci = Obs2[cl][OGRID(minx, miny, cl)] & ~RTFLAG;
-		     Pr[tind].pred = ci;
-	             ci2 = Obs2[dl][OGRID(minx, miny, dl)] & ~RTFLAG;
-		     Pr[ci].pred = ci2;
-		     Pr[ci2].pred = prev;
-		     if (Pr[prev].pred != ci2) {
-		        Pr[ci2].pred = prev;
-		     }
-		  }
-		  else {
-		     printf("Warning:  Failed to remove stacked via!\n");
-		     stacks = 0;
-		  }
+	       if (!(Pr[prev].flags & PR_SWAPPED) && (Pr[prev].alt != 0)) {
+	          alt = Pr[prev].alt;
+	          Pr[prev].pred = alt;
+	          Pr[prev].alt = ppre;
+	          Pr[prev].flags |= PR_SWAPPED;
+	       } else {
+	          printf("Error:  Unable to avoid stacked via!\n");
+		  stacks = 0;
+		  break;
 	       }
 	    }
-	    tind = prev;
-	    prev = ppre;
+	    else {
+	       tind = prev;
+	       if (Pr[tind].flags & PR_LOOPED)
+	          prev = Pr[tind].alt;
+	       else
+	          prev = Pr[tind].pred;
+
+	       Pr[tind].flags &= ~PR_LOOPED;
+
+	       if (Pr[tind].flags & PR_SWAPPED)
+		  Pr[tind].flags |= PR_LOOPED;
+	    }
 	 }
       }
    }
@@ -795,6 +638,22 @@ int commit_proute(ROUTE rt, u_char stage)
       seg->next = NULL;
 
       seg->segtype = (ll == Pr[prev].layer) ? ST_WIRE : ST_VIA;
+
+      /*
+      if (NoStackedContacts == 1 && lseg && lseg->segtype == ST_VIA
+		&& seg->segtype == ST_VIA) {
+	 if (Pr[index].alt == 0) {
+	    printf("Error:  Unable to avoid stacked via!\n");
+	 }
+	 else {
+	    prev = Pr[index].alt;
+            seg->segtype = (ll == Pr[prev].layer) ? ST_WIRE : ST_VIA;
+	    if (seg->segtype == ST_VIA) {
+	       printf("Error:  Alternate route is also stacked via?!\n");
+	    }
+	 }
+      }
+      */
 
       seg->x1 = xn;
       seg->y1 = yn;
@@ -891,7 +750,14 @@ int commit_proute(ROUTE rt, u_char stage)
       xn = seg->x2; yn = seg->y2; ll = Pr[prev].layer;
 
       index = prev;
-      prev = Pr[index].pred;
+      if (Pr[index].flags & PR_LOOPED)
+         prev = Pr[index].alt;
+      else
+         prev = Pr[index].pred;
+
+      Pr[index].flags &= ~PR_LOOPED;
+      if (Pr[index].flags & PR_SWAPPED)
+	 Pr[index].flags |= PR_LOOPED;
 
       // Problem:  index should always be zero at source, but it's not.
       // So we check here if the predecessor position is equal to the source.

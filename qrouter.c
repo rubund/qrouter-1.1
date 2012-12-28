@@ -1490,7 +1490,6 @@ int route_segs(ROUTE rt, u_char stage)
   // Note that it will be placed at whichever tap has the lowest cost route.
 
   Pr[0].pred = 0;
-  Pr[0].alt = 0;
   Pr[0].flags = (u_char)0;
   Pr[0].cost = MAXRT;
 

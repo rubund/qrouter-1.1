@@ -55,8 +55,7 @@ typedef struct proute_ PROUTE;
 
 struct proute_ {        // partial route
   int pred;             // predecessor proute index
-  int alt;		// alternate predecessor index
-  int cost;
+  int cost;		// cost of route coming from predecessor
   int layer;            // load into struct seg_
   int x1, y1;
   u_char flags; 	// values PR_PROCESSED and PR_CONFLICT
