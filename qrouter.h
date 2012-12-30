@@ -216,7 +216,7 @@ struct netlist_ {
 };
 
 #define MAXRT		10000000		// "Infinite" route cost
-#define PRindMAX	((u_int)0x200000)
+#define PRindMAX	((u_int)0x10000000)	// Good to 8192 x 8192 x 4
 #define RTFLAG		((u_int)0x80000000)
 #define SRCFLAG		((u_int)0x40000000)	// Location is a source node
 #define PINOBSTRUCTMASK	((u_int)0x60000000) 	// takes values from below
