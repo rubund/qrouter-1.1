@@ -2,7 +2,7 @@ prefix = /usr/local
 bindir = ${prefix}/bin
 cfgdir = ${prefix}/lib/qrouter
 
-CC = gcc
+CC = gcc -m64 -fPIC
 CFLAGS = -g
 DFLAGS = -DHAVE_TYPES_H -DLIBDIR=\"${cfgdir}\" -DQVERSION=\"`cat VERSION`\"
 

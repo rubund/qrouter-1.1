@@ -1472,11 +1472,11 @@ int route_segs(ROUTE rt, u_char stage)
       for (x = 0; x < NumChannelsX[i]; x++) {
 	  for (y = 0; y < NumChannelsY[i]; y++) {
 	      netnum = Obs[i][OGRID(x, y, i)];
-	      Obs2[i][OGRID(x, y, i)] = netnum;
+	      Obs2[i][OGRID(x, y, i)] = (netnum & ~PINOBSTRUCTMASK);
 	      dir = netnum & PINOBSTRUCTMASK;
-	      if ((dir != 0) && (dir != STUBROUTE_X)) {
+	      if ((dir != 0) && (dir == STUBROUTE_X)) {
 		 if ((netnum & ~PINOBSTRUCTMASK) == rt->netnum)
-		    Obs2[i][OGRID(x, y, i)] = rt->netnum;
+		    Obs2[i][OGRID(x, y, i)] = 0;	// STUBROUTE_X not routable
 	      }
 	  }
       }
