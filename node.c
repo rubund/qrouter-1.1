@@ -151,6 +151,61 @@ void print_nlnets( char *filename )
 } /* void print_nlnets() */
 
 /*--------------------------------------------------------------*/
+/* create_obstructions_from_variable_pitch()			*/
+/*								*/
+/*  Although it would be nice to have an algorithm that would	*/
+/*  work with any arbitrary pitch, qrouter will work around	*/
+/*  having larger pitches on upper metal layers by selecting	*/
+/*  1 out of every N tracks for routing, and placing 		*/
+/*  obstructions in the interstices.  This makes the possibly	*/
+/*  unwarranted assumption that the contact down to the layer	*/
+/*  below does not cause spacing violations to neighboring	*/
+/*  tracks.  If that assumption fails, this routine will have	*/
+/*  to be revisited.						*/
+/*--------------------------------------------------------------*/
+
+void create_obstructions_from_variable_pitch()
+{
+   int l, o, vnum, hnum, x, y;
+   double vpitch, hpitch;
+   u_int no_net;
+
+   no_net = (u_int)Numnets + 1;
+
+   for (l = 0; l < Num_layers; l++) {
+      o = LefGetRouteOrientation(l);
+      if (o == 1) {	// Horizontal route
+	 vpitch = LefGetRoutePitch(l);
+	 hpitch = LefGetRouteWidth(l) + LefGetRouteSpacing(l);
+      }
+      else {		// Vertical route
+	 hpitch = LefGetRoutePitch(l);
+	 vpitch = LefGetRouteWidth(l) + LefGetRouteSpacing(l);
+      }
+
+      vnum = 1;
+      while (vpitch > PitchY[l]) {
+	 vpitch /= 2.0;
+	 vnum++;
+      }
+      hnum = 1;
+      while (hpitch > PitchX[l]) {
+	 hpitch /= 2.0;
+	 hnum++;
+      }
+      if (vnum > 1 || hnum > 1) {
+	 for (x = 0; x < NumChannelsX[l]; x++) {
+	    if (x % hnum == 0) continue;
+	    for (y = 0; y < NumChannelsY[l]; y++) {
+	       if (y % vnum == 0) continue;
+	       Obs[l][OGRID(x, y, l)] = no_net;
+	    }
+	 }
+      }
+   }
+}
+
+/*--------------------------------------------------------------*/
 /* create_obstructions_from_gates()				*/
 /*								*/
 /*  Fills in the Obs[][] grid from obstructions that were	*/

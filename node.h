@@ -17,6 +17,7 @@ void print_nodes( char *filename );
 void print_nlnets( char *filename );
 void create_obstructions_from_nodes( void );
 void create_obstructions_from_gates( void );
+void create_obstructions_from_variable_pitch( void );
 void print_obs( char *filename );
 void print_obs2( char *filename );
 int isconnected( NODE node1, NODE node2 );

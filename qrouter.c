@@ -12,8 +12,6 @@
 #include <string.h>
 #include <getopt.h>
 
-#define  MAIN
-
 #include "qrouter.h"
 #include "config.h"
 #include "node.h"
@@ -36,13 +34,14 @@ NODE    Nlnodes;	// information about gate terminals (pins)
 NETLIST FailedNets;	// list of nets that failed to route
 NETLIST Abandoned;	// list of nets that will never route
 
-u_int *Obs[MAX_LAYERS];      // net obstructions in layer
-u_int *Obs2[MAX_LAYERS];     // used for pt->pt routes on layer
-float *Stub[MAX_LAYERS];     // used for stub routing to pins
-NODE  *Nodeloc[MAX_LAYERS];  // nodes are here. . .
-NODE  *Nodesav[MAX_LAYERS];  // . . . and here (but not to be altered)
-PROUTE  Pr[PRindMAX + 1];    // put this in the Obs2 array
-DSEG  UserObs;		     // user-defined obstruction layers
+u_char *Mask[MAX_LAYERS];    // mask out best area to route, expand as needed
+u_int  *Obs[MAX_LAYERS];     // net obstructions in layer
+u_int  *Obs2[MAX_LAYERS];    // used for pt->pt routes on layer
+float  *Stub[MAX_LAYERS];    // used for stub routing to pins
+NODE   *Nodeloc[MAX_LAYERS]; // nodes are here. . .
+NODE   *Nodesav[MAX_LAYERS]; // . . . and here (but not to be altered)
+PROUTE Pr[PRindMAX + 1];     // put this in the Obs2 array
+DSEG   UserObs;		     // user-defined obstruction layers
 
 int   Numnodes = 0;
 int   Numnets = 0;
@@ -203,11 +202,20 @@ main(argc, argv)
       }
       fflush(stdout);
 
+      /*
+      Mask[i] = (u_char *)calloc(NumChannelsX[i] * NumChannelsY[i],
+			sizeof(u_char));
+      if (!Mask[i]) {
+	 fprintf(stderr, "Out of memory 1.\n");
+	 exit(3);
+      }
+      */
+
       Obs[i] = (u_int *)calloc(NumChannelsX[i] * NumChannelsY[i],
 			sizeof(u_int));
       if (!Obs[i]) {
-	 fprintf(stderr, "Out of memory 1.\n");
-	 exit(3);
+	 fprintf(stderr, "Out of memory 2.\n");
+	 exit(4);
       }
 
       Obs2[i] = (u_int *)calloc(NumChannelsX[i] * NumChannelsY[i],
@@ -251,6 +259,7 @@ main(argc, argv)
 
    create_obstructions_from_gates();
    create_obstructions_from_nodes();
+   create_obstructions_from_variable_pitch();
     
    // now we have netlist data, and can use it to get a list of nets.
 
@@ -305,6 +314,7 @@ main(argc, argv)
       }
    }
    fprintf(stdout, "----------------------------------------------\n");
+
    exit(0);
 
 } /* main() */
@@ -872,7 +882,7 @@ void read_def_config(char *filename)
 	       if (tolower(corient) == 'x') {
 		  Vert[j] = 1;
 	          PitchX[j] = step / scalefac;
-		  v = j;
+		  if ((v == -1) || (PitchX[j] < PitchX[v])) v = j;
 		  if ((j < Num_layers - 1) && PitchX[j + 1] == 0.0)
 		     PitchX[j + 1] = PitchX[j];
 		  llx = start;
@@ -883,7 +893,7 @@ void read_def_config(char *filename)
 	       else {
 		  Vert[j] = 0;
 	          PitchY[j] = step / scalefac;
-		  h = j;
+		  if ((h == -1) || (PitchY[j] < PitchY[h])) h = j;
 		  if ((j < Num_layers - 1) && PitchY[j + 1] == 0.0)
 		     PitchY[j + 1] = PitchY[j];
 		  lly = start;
@@ -919,12 +929,14 @@ void read_def_config(char *filename)
    for (i = 0; i < Num_layers; i++) {
      if (PitchX[i] != 0.0 && PitchX[i] != PitchX[v])
         fprintf(stderr, "Multiple vertical route layers at different"
-                " pitches.  I cannot handle this!  Using pitch %g\n",
+                " pitches.  Using pitch %g and routing on 1-of-N"
+		" tracks for larger pitches.\n",
                 PitchX[v]);
      PitchX[i] = PitchX[v];
      if (PitchY[i] != 0.0 && PitchY[i] != PitchY[h])
         fprintf(stderr, "Multiple horizontal route layers at different"
-                " pitches.  I cannot handle this!  Using pitch %g\n",
+                " pitches.  Using pitch %g and routing on 1-of-N"
+		" tracks for larger pitches.\n",
                 PitchY[h]);
      PitchY[i] = PitchY[h];
   }
@@ -1350,10 +1362,248 @@ dosecondstage()
    // Make sure FailedNets is cleaned up, in case we broke out
    // of the loop with an error condition.
 
+   if (Failfptr) fprintf(Failfptr, "\n------------------------------------------\n");
+   if (FailedNets && !Failfptr) openFailFile();
+
    while (FailedNets) {
+      net = FailedNets->net;
+      fprintf(Failfptr, "Final:  Failed to route net %s\n", net->netname);
       nl = FailedNets->next;
       free(FailedNets);
       FailedNets = nl;
+   }
+}
+
+/*--------------------------------------------------------------*/
+/* createMask() ---						*/
+/*								*/
+/* Create mask of optimal area to route.			*/
+/* For 2-node routes, find the two L-shaped routes between the	*/
+/* two closest points of the nodes.				*/
+/* For multi-node (>2) routes, find the best trunk line that	*/
+/* passes close to all nodes, and generate stems to the closest	*/
+/* point on each node.						*/
+/*--------------------------------------------------------------*/
+
+void createMask(NET net)
+{
+  NODE n1, n2;
+  NODELIST n;
+  int i, j, o, l;
+  DPOINT dtap, d1tap, d2tap, mintap;
+  int dx, dy, dist, mindist;
+  int x1, x2, y1, y2;
+  int xcent, ycent, xmin, ymin, xmax, ymax;
+
+  fillMask(0);
+
+  if (net->numnodes == 2) { 
+
+     n1 = (NODE)net->netnodes->node;
+     n2 = (NODE)net->netnodes->next->node;
+     mindist = MAXRT;
+
+     // Simple 2-pass---pick up first tap on n1, find closest tap on n2,
+     // then find closest tap on n1.
+     d1tap = (n1->taps == NULL) ? n1->extend : n1->taps;
+     for (d2tap = (n2->taps == NULL) ? n2->extend : n2->taps; d2tap != NULL;
+		d2tap = d2tap->next) {
+	dx = d2tap->gridx - d1tap->gridx;
+	dy = d2tap->gridy - d1tap->gridy;
+	dist = dx * dx + dy * dy;
+	if (dist < mindist) {
+	   mindist = dist;
+	   mintap = d2tap;
+	}
+     }
+     d2tap = mintap;
+     mindist = MAXRT;
+     for (d1tap = (n1->taps == NULL) ? n1->extend : n1->taps; d1tap != NULL;
+		d1tap = d1tap->next) {
+	dx = d2tap->gridx - d1tap->gridx;
+	dy = d2tap->gridy - d1tap->gridy;
+	dist = dx * dx + dy * dy;
+	if (dist < mindist) {
+	   mindist = dist;
+	   mintap = d1tap;
+	}
+     }
+     d1tap = mintap;
+
+     // Now construct a mask of two L-routes from d1tap to d2tap, 3 tracks width
+
+     x1 = (d1tap->gridx < d2tap->gridx) ? d1tap->gridx : d2tap->gridx;
+     x2 = (d1tap->gridx < d2tap->gridx) ? d2tap->gridx : d1tap->gridx;
+     y1 = (d1tap->gridy < d2tap->gridy) ? d1tap->gridy : d2tap->gridy;
+     y2 = (d1tap->gridy < d2tap->gridy) ? d2tap->gridy : d1tap->gridy;
+
+     l = (d1tap->layer < d2tap->layer) ? d1tap->layer : d2tap->layer;
+
+     // Place a track on every tap and extend position
+     for (d1tap = n1->taps; d1tap != NULL; d1tap = d1tap->next)
+	Mask[d1tap->layer][OGRID(d1tap->x, d1tap->y, d1tap->layer)] = (u_char)1;
+     for (d1tap = n1->extend; d1tap != NULL; d1tap = d1tap->next)
+	Mask[d1tap->layer][OGRID(d1tap->x, d1tap->y, d1tap->layer)] = (u_char)1;
+     for (d2tap = n2->taps; d2tap != NULL; d2tap = d2tap->next)
+	Mask[d2tap->layer][OGRID(d2tap->x, d2tap->y, d2tap->layer)] = (u_char)1;
+     for (d2tap = n2->extend; d2tap != NULL; d2tap = d2tap->next)
+	Mask[d2tap->layer][OGRID(d2tap->x, d2tap->y, d2tap->layer)] = (u_char)1;
+
+     // Find the orientation of the lowest tap layer.  Lay alternate vertical
+     // and horizontal tracks according to track orientation.
+
+     for (; l < Num_layers; l++) {
+        o = LefGetRouteOrientation(l);
+	if (!o) {
+           for (i = x1 - 1; i <= x1 + 1; i++)
+	      for (j = y1 - 1; j <= y2 + 1; j++)	// Left vertical route
+	         Mask[l][OGRID(i, j, l)] = (u_char)1;
+
+           for (i = x2 - 1; i <= x2 + 1; i++)
+	      for (j = y1 - 1; j <= y2 + 1; j++)	// Right vertical route
+	         Mask[l][OGRID(i, j, l)] = (u_char)1;
+	}
+	else {
+           for (i = x1 - 1; i <= x2 + 1; i++)
+	      for (j = y1 - 1; j <= y1 + 1; j++)	// Bottom horizontal route
+	         Mask[l][OGRID(i, j, l)] = (u_char)1;
+
+           for (i = x1 - 1; i <= x2 + 1; i++)
+	      for (j = y2 - 1; j <= y2 + 1; j++)	// Top horizontal route
+	         Mask[l][OGRID(i, j, l)] = (u_char)1;
+	}
+     }
+
+     fprintf(stdout, "2-port mask edges rectangle (%d %d) to (%d %d)\n",
+		x1, y1, x2, y2);
+  }
+  else {
+
+     // Use the first tap point for each node to get a rough bounding box and
+     // centroid of all taps
+     xcent = ycent = 0;
+     xmax = ymax = -(MAXRT);
+     xmin = ymin = MAXRT;
+     for (n = net->netnodes; n != NULL; n = n->next) {
+	n1 = n->node;
+	dtap = (n1->taps == NULL) ? n1->extend : n1->taps;
+	xcent += dtap->gridx;
+	ycent += dtap->gridy;
+	if (dtap->gridx > xmax) xmax = dtap->gridx;
+	if (dtap->gridx < xmin) xmin = dtap->gridx;
+	if (dtap->gridy > ymax) ymax = dtap->gridy;
+	if (dtap->gridy < ymin) ymin = dtap->gridy;
+     }
+     xcent /= net->numnodes;
+     ycent /= net->numnodes;
+
+     if (xmax - xmin > ymax - ymin) {
+	// Horizontal trunk
+	o = 1;
+	ymin = ymax = ycent;
+     }
+     else {
+	o = 0;
+	xmin = xmax = xcent;
+     }
+
+     // Allow routes at all tap and extension points
+     for (n = net->netnodes; n != NULL; n = n->next) {
+	n1 = n->node;
+        for (dtap = n1->taps; dtap != NULL; dtap = dtap->next)
+	   Mask[dtap->layer][OGRID(dtap->gridx, dtap->gridy, dtap->layer)] = (u_char)1;
+        for (dtap = n1->extend; dtap != NULL; dtap = dtap->next)
+	   Mask[dtap->layer][OGRID(dtap->gridx, dtap->gridy, dtap->layer)] = (u_char)1;
+     }
+
+     for (l = 0; l < Num_layers; l++) {
+	// If the layer orientation is the same as the trunk, place mask around
+	// trunk line.
+	if (o == LefGetRouteOrientation(l)) {
+           for (i = xmin - 1; i <= xmax + 1; i++)
+	      for (j = ymin - 1; j <= ymax + 1; j++)
+	         Mask[l][OGRID(i, j, l)] = (u_char)1;
+	}
+	else {
+           for (n = net->netnodes; n != NULL; n = n->next) {
+	      n1 = n->node;
+	      dtap = (n1->taps == NULL) ? n1->extend : n1->taps;
+	      if (o == 1) {	// Horizontal trunk, vertical branches
+                 for (i = dtap->gridx - 1; i <= dtap->gridx + 1; i++) {
+	            for (j = dtap->gridy - 1; j <= ycent + 1; j++)
+	               Mask[l][OGRID(i, j, l)] = (u_char)1;
+	            for (j = ycent - 1; j <= dtap->gridy + 1; j++)
+	               Mask[l][OGRID(i, j, l)] = (u_char)1;
+	         }
+	      } 
+	      else {		// Vertical trunk, horizontal branches
+                 for (j = dtap->gridy - 1; j <= dtap->gridy + 1; j++) {
+	            for (i = dtap->gridx - 1; i <= xcent + 1; i++)
+	               Mask[l][OGRID(i, j, l)] = (u_char)1;
+	            for (i = xcent - 1; i <= dtap->gridx + 1; i++)
+	               Mask[l][OGRID(i, j, l)] = (u_char)1;
+		 }
+	      }
+	   }
+	}
+     }
+     fprintf(stdout, "multi-port mask has trunk line (%d %d) to (%d %d)\n",
+		xmin, ymin, xmax, ymax);
+  }
+}
+
+/*--------------------------------------------------------------*/
+/* expandMask --- Extend the Mask area by 1 in all directions	*/
+/* by recursive search over all active mask positions (set to	*/
+/* nonzero).  Value 1 is used for new mask positions; value 2	*/
+/* tracks mask positions that have been processed.		*/
+/*--------------------------------------------------------------*/
+
+void expandMask(int x, int y, int l) {
+   if (Mask[l][OGRID(x, y, l)] == 0) {
+      Mask[l][OGRID(x, y, l)] = (u_char)2;
+   }
+   else if (Mask[l][OGRID(x, y, l)] == 1) {
+      Mask[l][OGRID(x, y, l)] = (u_char)2;	// Mark processed
+      if (x > 0) expandMask(x - 1, y, l);
+      else if (x < NumChannelsX[l] - 1) expandMask(x + 1, y, l);
+      if (y > 0) expandMask(x, y - 1, l);
+      else if (y < NumChannelsY[l] - 1) expandMask(x, y + 1, l);
+      if (l > 0) expandMask(x, y, l - 1);
+      else if (l < Num_layers - 1) expandMask(x, y, l + 1);
+   }
+}
+
+/*--------------------------------------------------------------*/
+/* setMask() is the same routine as expandMask() but cleans up,	*/
+/* turning all values 2 back into mask value 1.			*/
+/*--------------------------------------------------------------*/
+
+void setMask(int x, int y, int l) {
+   if (Mask[l][OGRID(x, y, l)] == 2) {
+      Mask[l][OGRID(x, y, l)] = (u_char)1;
+
+      if (x > 0) setMask(x - 1, y, l);
+      else if (x < NumChannelsX[l] - 1) setMask(x + 1, y, l);
+      if (y > 0) setMask(x, y - 1, l);
+      else if (y < NumChannelsY[l] - 1) setMask(x, y + 1, l);
+      if (l > 0) setMask(x, y, l - 1);
+      else if (l < Num_layers - 1) setMask(x, y, l + 1);
+   }
+}
+
+/*--------------------------------------------------------------*/
+/* fillMask() fills the Mask[] array with all 1s as a last	*/
+/* resort, ensuring that no valid routes are missed due to a	*/
+/* bad guess about the optimal route positions.			*/
+/*--------------------------------------------------------------*/
+
+void fillMask(int value) {
+   int i;
+
+   for (i = 0; i < Num_layers; i++) {
+      memset((void *)Mask[i], value,
+		(size_t)(NumChannelsX[i] * NumChannelsY[i] * sizeof(u_char)));
    }
 }
 
@@ -1382,8 +1632,8 @@ int doroute(NET net, u_char stage)
   }
 
   CurNet = net;				// Global, used by 2nd stage
-  n1 = (NODE)(net->netnodes->node);	// Use the first node
 
+  n1 = (NODE)(net->netnodes->node);	// Start with the first node
   while (1) {	// Keep going until we are unable to route to a terminal
 
      TotalRoutes++;
@@ -1451,7 +1701,7 @@ int route_segs(ROUTE rt, u_char stage)
   NET  net;
   SEG  seg;
   struct seg_ bbox;
-  int  i, j, k;
+  int  i, j, k, o;
   int  x, y;
   NODE n1, n2, n2save;
   u_int netnum, dir;
@@ -1463,6 +1713,7 @@ int route_segs(ROUTE rt, u_char stage)
   int  result;
   int  rval;
   u_char first = (u_char)1;
+  u_char check_order[6];
   DPOINT n1tap, n2tap;
 
   // Make Obs2[][] a copy of Obs[][].  Convert pin obstructions to
@@ -1545,13 +1796,16 @@ int route_segs(ROUTE rt, u_char stage)
      return 0;
   }
 
+  // Generate a search area mask representing the "likely best route".
+  // createMask(CurNet);
+
   // Heuristic:  Set the initial cost beyond which we stop searching.
   // This value is twice the cost of a direct route across the
-  // maximum extent of the source to target, divided by the number of
-  // nodes in the net.  We purposely set this value low.  It has a
-  // severe impact on the total run time of the algorithm.  If the
-  // initial max cost is so low that no route can be found, it will
-  // be doubled on each pass.
+  // maximum extent of the source to target, divided by the square
+  // root of the number of nodes in the net.  We purposely set this
+  // value low.  It has a severe impact on the total run time of the
+  // algorithm.  If the initial max cost is so low that no route can
+  // be found, it will be doubled on each pass.
 
   maxcost = 2 * MAX((bbox.x2 - bbox.x1), (bbox.y2 - bbox.y1)) * SegCost +
 		(int)stage * ConflictCost;
@@ -1586,7 +1840,8 @@ int route_segs(ROUTE rt, u_char stage)
        fprintf(stdout, "\n");
        first = (u_char)1;
     }
-    fprintf(stdout, "Pass %d\n", pass);
+    fprintf(stdout, "Pass %d", pass + 1);
+    fprintf(stdout, " (maxcost is %d)\n", maxcost);
 
     while (gpoint = glist) {
 
@@ -1641,87 +1896,138 @@ int route_segs(ROUTE rt, u_char stage)
 	 continue;
       }
 
-      // Quick check:  Limit maximum cost to limit search space
-      // Move the point onto the "unprocessed" stack and we'll pick up
-      // from this point on the next pass, if needed.
-
       if (thisnetnum != SRCNETNUM) {
-         if (Pr[thisindex].cost > maxcost && Pr[thisindex].cost < MAXRT) {
-	    gpoint->next = gunproc;
-	    gunproc = gpoint;
-	    continue;
+
+         if (Pr[thisindex].cost < MAXRT) {
+
+	    // Severely limit the search space by not processing anything that
+	    // is not under the current route mask, which identifies a narrow
+	    // "best route" solution.
+
+	    // if (Mask[CurrentLay][OGRID(NPX, NPY, CurrentLay)] == (u_char)0) {
+	    //    gpoint->next = gunproc;
+	    //    gunproc = gpoint;
+	    //    continue;
+	    // }
+
+            // Quick check:  Limit maximum cost to limit search space
+            // Move the point onto the "unprocessed" stack and we'll pick up
+            // from this point on the next pass, if needed.
+
+	    // else
+            if (Pr[thisindex].cost > maxcost) {
+	       gpoint->next = gunproc;
+	       gunproc = gpoint;
+	       continue;
+	    }
 	 }
       }
       free(gpoint);
 
       // check east/west/north/south, and bottom to top
 
+      // 1st optimization:  Direction of route on current layer is preferred.
+      o = LefGetRouteOrientation(CurrentLay);
+      if (o == 1) {			// horizontal routes---check EAST and WEST first
+	 check_order[0] = EAST;
+	 check_order[1] = WEST;
+	 check_order[2] = UP;
+	 check_order[3] = DOWN;
+	 check_order[4] = NORTH;
+	 check_order[5] = SOUTH;
+      }
+      else {				// vertical routes---check NORTH and SOUTH first
+	 check_order[0] = NORTH;
+	 check_order[1] = SOUTH;
+	 check_order[2] = UP;
+	 check_order[3] = DOWN;
+	 check_order[4] = EAST;
+	 check_order[5] = WEST;
+      }
+
       min = MAXRT;
-      if ((NPX + 1) < NumChannelsX[CurrentLay]) {
-	if ((result = eval_pt(NPX + 1, NPY, CurrentLay, thisindex, stage)) == 1) {
-	   gpoint = (POINT)malloc(sizeof(struct point_));
-	   gpoint->x1 = NPX + 1;
-	   gpoint->y1 = NPY;
-	   gpoint->layer = CurrentLay;
-	   gpoint->next = glist;
-	   glist = gpoint;
-        }
-      }
 
-      if ((NPX - 1) >= 0) {
-	if ((result = eval_pt(NPX - 1, NPY, CurrentLay, thisindex, stage)) == 1) {
-	   gpoint = (POINT)malloc(sizeof(struct point_));
-	   gpoint->x1 = NPX - 1;
-	   gpoint->y1 = NPY;
-	   gpoint->layer = CurrentLay;
-	   gpoint->next = glist;
-	   glist = gpoint;
-        }
-      }
+      for (i = 0; i < 6; i++) {
+	 switch (check_order[i]) {
+	    case EAST:
+               if ((NPX + 1) < NumChannelsX[CurrentLay]) {
+         	  if ((result = eval_pt(NPX + 1, NPY, CurrentLay, thisindex, stage)) == 1) {
+         	     gpoint = (POINT)malloc(sizeof(struct point_));
+         	     gpoint->x1 = NPX + 1;
+         	     gpoint->y1 = NPY;
+         	     gpoint->layer = CurrentLay;
+         	     gpoint->next = glist;
+         	     glist = gpoint;
+                   }
+               }
+	       break;
 
-      if ((NPY - 1) >= 0) {
-	if ((result = eval_pt(NPX, NPY - 1, CurrentLay, thisindex, stage)) == 1) {
-	   gpoint = (POINT)malloc(sizeof(struct point_));
-	   gpoint->x1 = NPX;
-	   gpoint->y1 = NPY - 1;
-	   gpoint->layer = CurrentLay;
-	   gpoint->next = glist;
-	   glist = gpoint;
-        }
-      }
+	    case WEST:
+               if ((NPX - 1) >= 0) {
+         	  if ((result = eval_pt(NPX - 1, NPY, CurrentLay, thisindex, stage)) == 1) {
+         	     gpoint = (POINT)malloc(sizeof(struct point_));
+         	     gpoint->x1 = NPX - 1;
+         	     gpoint->y1 = NPY;
+         	     gpoint->layer = CurrentLay;
+         	     gpoint->next = glist;
+         	     glist = gpoint;
+                  }
+               }
+	       break;
+         
+	    case SOUTH:
+               if ((NPY - 1) >= 0) {
+         	  if ((result = eval_pt(NPX, NPY - 1, CurrentLay, thisindex, stage)) == 1) {
+         	     gpoint = (POINT)malloc(sizeof(struct point_));
+         	     gpoint->x1 = NPX;
+         	     gpoint->y1 = NPY - 1;
+         	     gpoint->layer = CurrentLay;
+         	     gpoint->next = glist;
+         	     glist = gpoint;
+                   }
+               }
+	       break;
 
-      if ((NPY + 1) < NumChannelsY[CurrentLay]) {
-	if ((result = eval_pt(NPX, NPY + 1, CurrentLay, thisindex, stage)) == 1) {
-	   gpoint = (POINT)malloc(sizeof(struct point_));
-	   gpoint->x1 = NPX;
-	   gpoint->y1 = NPY + 1;
-	   gpoint->layer = CurrentLay;
-	   gpoint->next = glist;
-	   glist = gpoint;
-        }
-      }
+	    case NORTH:
+               if ((NPY + 1) < NumChannelsY[CurrentLay]) {
+         	  if ((result = eval_pt(NPX, NPY + 1, CurrentLay, thisindex, stage)) == 1) {
+         	     gpoint = (POINT)malloc(sizeof(struct point_));
+         	     gpoint->x1 = NPX;
+         	     gpoint->y1 = NPY + 1;
+         	     gpoint->layer = CurrentLay;
+         	     gpoint->next = glist;
+         	     glist = gpoint;
+                  }
+               }
+	       break;
       
-      if (CurrentLay > 0) {
-	 if ((result = eval_pt(NPX, NPY, CurrentLay - 1, thisindex, stage)) == 1) {
-	    gpoint = (POINT)malloc(sizeof(struct point_));
-	    gpoint->x1 = NPX;
-	    gpoint->y1 = NPY;
-	    gpoint->layer = CurrentLay - 1;
-	    gpoint->next = glist;
-	    glist = gpoint;
-	 }
-      }
-
-      if (CurrentLay < (Num_layers - 1)) {
-	 if ((result = eval_pt(NPX, NPY, CurrentLay + 1, thisindex, stage)) == 1) {
-	    gpoint = (POINT)malloc(sizeof(struct point_));
-	    gpoint->x1 = NPX;
-	    gpoint->y1 = NPY;
-	    gpoint->layer = CurrentLay + 1;
-	    gpoint->next = glist;
-	    glist = gpoint;
-	 }
-      }
+	    case DOWN:
+               if (CurrentLay > 0) {
+         	  if ((result = eval_pt(NPX, NPY, CurrentLay - 1, thisindex, stage)) == 1) {
+         	     gpoint = (POINT)malloc(sizeof(struct point_));
+         	     gpoint->x1 = NPX;
+         	     gpoint->y1 = NPY;
+         	     gpoint->layer = CurrentLay - 1;
+         	     gpoint->next = glist;
+         	     glist = gpoint;
+         	  }
+               }
+	       break;
+         
+	    case UP:
+               if (CurrentLay < (Num_layers - 1)) {
+         	  if ((result = eval_pt(NPX, NPY, CurrentLay + 1, thisindex, stage)) == 1) {
+         	     gpoint = (POINT)malloc(sizeof(struct point_));
+         	     gpoint->x1 = NPX;
+         	     gpoint->y1 = NPY;
+         	     gpoint->layer = CurrentLay + 1;
+         	     gpoint->next = glist;
+         	     glist = gpoint;
+         	  }
+               }
+	       break;
+            }
+         }
 
       // Mark this node as processed
       Pr[thisindex].flags |= PR_PROCESSED;
@@ -1761,12 +2067,14 @@ int route_segs(ROUTE rt, u_char stage)
     // If we found a route, save it and return
 
     if (Pr[0].cost <= maxcost) {
-	fprintf(stdout, "\nCommit to a route of cost %d\n", Pr[0].cost);
 	NPX = bestX;
 	NPY = bestY;
 	CurrentLay = bestL;
 	Obs2[CurrentLay][OGRID(NPX, NPY, CurrentLay)] = RTFLAG;
 	commit_proute(rt, stage);
+	fprintf(stdout, "\nCommit to a route of cost %d\n", Pr[0].cost);
+	fprintf(stdout, "Between positions (%d %d) and (%d %d)\n",
+		bestX, bestY, NPX, NPY);
 	rval = 1;
 	goto done;	/* route success */
     }
@@ -1775,6 +2083,9 @@ int route_segs(ROUTE rt, u_char stage)
     // Increase maximum cost for next pass.
 
     maxcost <<= 1;
+    if (maxcost < 0) break;		// Overflowed unsigned integer, we're
+					// probably completely hosed long before
+					// this.
 
     if (gunproc == NULL) break;		// route failure not due to limiting
 					// search to maxcost

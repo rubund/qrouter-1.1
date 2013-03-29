@@ -551,7 +551,7 @@ int commit_proute(ROUTE rt, u_char stage)
    DPOINT dp;
 
    fflush(stdout);
-   fprintf(stderr, "Commit: TotalRoutes = %d\n", TotalRoutes);
+   fprintf(stderr, "\nCommit: TotalRoutes = %d\n", TotalRoutes);
 
    n1 = rt->node;
    netnum = rt->netnum;
@@ -577,8 +577,8 @@ int commit_proute(ROUTE rt, u_char stage)
    // TEST:  Walk through the solution, and look for stacked vias.  When
    // found, look for an alternative path that avoids the stack.
 
-   if (NoStackedContacts == 1) {
-      int tind, ppre, stacks = 1;
+   if (StackedContacts < (Num_layers - 1)) {
+      int tind, ppre, stacks = 1, stackheight, a, b;
       int cx, cy, cl, mincost;
       int dx, dy, dl, minx, miny, ci, ci2;
 
@@ -594,8 +594,16 @@ int commit_proute(ROUTE rt, u_char stage)
 	 while (prev != 0) {
 	    ppre = Pr[prev].pred;
 	    if (ppre == 0) break;
-	    if (Pr[tind].layer != Pr[prev].layer &&
-		Pr[prev].layer != Pr[ppre].layer) {
+	    stackheight = 0;
+	    a = tind;
+	    b = prev;
+	    while (Pr[a].layer != Pr[b].layer) {
+	       stackheight++;
+	       a = b;
+	       b = Pr[a].pred;
+	       if (b == 0) break;
+	    }
+	    if (stackheight > StackedContacts) {
 	       stacks++;
 
 	       // Try to move the second contact in the path
@@ -906,6 +914,12 @@ int commit_proute(ROUTE rt, u_char stage)
 	    Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] |= dir2;
          }
 	 if (Debug) print_obs("obs.f1");
+
+	 // Before returning, set NPX, NPY, and CurrentLay to the endpoint
+	 // position.  This is for diagnostic purposes only.
+	 NPX = Pr[index].x1;
+	 NPY = Pr[index].y1; 
+	 CurrentLay = Pr[index].layer;
 
 	 return TRUE;
       }

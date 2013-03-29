@@ -1,6 +1,6 @@
 -------------------------------------------------
-Qrouter version 1.0
-(c) 2011 by Tim Edwards
+Qrouter version 1.1
+(c) 2013 by Tim Edwards
 Based on heavily modified code from Steve Beccue
 Released under Gnu Public License
 ----------------------------------------------
@@ -42,6 +42,15 @@ setting up proute structures for every point on
 the source net, but makes it possible to specify
 one or more alternate predecessors for each
 potential route position.
+
+Added handling of routes with larger size and
+pitch on the higher layers.  Added handling
+of technologies that do not allow contacts
+to be stacked arbitrarily.  Some preliminary
+work in search optimization.  Finding a viable
+route (any viable route) quickly is the key to 
+setting a bound on cost early and prevent
+multiple passes over many points.
 
 ----------------------------------------------
 Compilation & installation:

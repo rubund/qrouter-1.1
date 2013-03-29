@@ -25,21 +25,22 @@ int    CurrentPin = 0;
 int    Firstcall = TRUE;
 int    PinNumber = 0;
 
-int     Num_layers   = MAX_LAYERS; // layers to use to route
+int     Num_layers   = MAX_LAYERS;	// layers to use to route
 
-double  PathWidth[MAX_LAYERS];     // width of the paths
-int     GDSLayer[MAX_LAYERS];	   // GDS layer number 
-int     GDSCommentLayer = 1;	   // for dummy wires, etc.
-char    CIFLayer[MAX_LAYERS][50];  // CIF layer name
-double  PitchX[MAX_LAYERS];         // Horizontal wire pitch of layer
-double  PitchY[MAX_LAYERS];         // Vertical wire pitch of layer
-int     NumChannelsX[MAX_LAYERS];  // number of wire channels in X on layer
-int     NumChannelsY[MAX_LAYERS];  // number of wire channels in Y on layer
-int     Vert[MAX_LAYERS];          // 1 if vertical, 0 if horizontal
-int     Numpasses = 5;             // number of times to iterate in route_segs
-char	NoStackedContacts = 0;	   // 1 to prevent stacked contacts, 0 if allowed
+double  PathWidth[MAX_LAYERS];		// width of the paths
+int     GDSLayer[MAX_LAYERS];		// GDS layer number 
+int     GDSCommentLayer = 1;		// for dummy wires, etc.
+char    CIFLayer[MAX_LAYERS][50];	// CIF layer name
+double  PitchX[MAX_LAYERS];		// Horizontal wire pitch of layer
+double  PitchY[MAX_LAYERS];		// Vertical wire pitch of layer
+int     NumChannelsX[MAX_LAYERS];	// number of wire channels in X on layer
+int     NumChannelsY[MAX_LAYERS];	// number of wire channels in Y on layer
+int     Vert[MAX_LAYERS];		// 1 if vertical, 0 if horizontal
+int     Numpasses = 10;			// number of times to iterate in route_segs
+char	StackedContacts = MAX_LAYERS;	// Value is number of contacts that may
+					// be stacked on top of each other.
 
-double  Xlowerbound=0.0;   // Bounding Box of routes, in microns
+double  Xlowerbound=0.0;		// Bounding Box of routes, in microns
 double  Xupperbound=0.0;      
 double  Ylowerbound=10.0;
 double  Yupperbound=10.0;      
@@ -273,7 +274,20 @@ int read_config(FILE *fconfig)
 	// etc.
 
 	if (strcasestr(lineptr, "no stack") != NULL) {
-	    OK = 1; NoStackedContacts = 1;
+	    OK = 1; StackedContacts = 1;
+	}
+
+	// Search for "stack N", where "N" is the largest number of vias
+	// that can be stacked upon each other.  Values 0 and 1 are both
+	// equivalent to specifying "no stack".
+
+	if ((i = sscanf(lineptr, "stack %ld", &iarg)) == 1) {
+	    OK = 1; StackedContacts = iarg;
+	    // Can't let StackedContacts be zero because qrouter would
+	    // believe that all contacts are disallowed, leading to a
+	    // lot of wasted processing time while it determines that's
+	    // not possible. . .
+	    if (StackedContacts == 0) StackedContacts = 1;
 	}
 
 	if ((i = sscanf(lineptr, "obstruction %lf %lf %lf %lf %s\n",
