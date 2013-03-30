@@ -1947,7 +1947,12 @@ int route_segs(ROUTE rt, u_char stage)
 
       min = MAXRT;
 
-      for (i = 0; i < 6; i++) {
+      // Check order is from 0 (1st priority) to 5 (last priority).  However, this
+      // is a stack system, so the last one placed on the stack is the first to be
+      // pulled and processed.  Therefore we evaluate and drop positions to check
+      // on the stack in reverse order (5 to 0).
+
+      for (i = 5; i >= 0; i--) {
 	 switch (check_order[i]) {
 	    case EAST:
                if ((NPX + 1) < NumChannelsX[CurrentLay]) {
