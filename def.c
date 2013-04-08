@@ -344,9 +344,10 @@ endCoord:
     {
 	/* to be done:  apply obstructions to grids */
 
-	/* advance to next point and free record (1-delayed) */ /* REDO! */
+	/* advance to next point and free record */
+	routeList = routeTop->next;
 	free(routeTop);
-	routeTop = routeTop->next;
+	routeTop = routeList;
     }
     return token;	/* Pass back the last token found */
 }

@@ -265,7 +265,7 @@ main(argc, argv)
    Abandoned = (NETLIST)NULL;
    fflush(stdout);
    fprintf(stderr, "Numnets = %d, Numnodes = %d, Numpins = %d\n",
-	     Numnets, Numnodes, Numpins );
+	     Numnets - MIN_NET_NUMBER, Numnodes, Numpins );
 
    // print_nlgates( "net.details" );
    // print_nodes( "nodes.details" );
