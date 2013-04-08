@@ -1108,16 +1108,8 @@ LefReadPort(lefMacro, f, pinName, pinNum, pinDir, pinUse, oscale)
  *------------------------------------------------------------
  */
 
-enum port_classes {PORT_CLASS_DEFAULT = 0, PORT_CLASS_INPUT,
-	PORT_CLASS_TRISTATE, PORT_CLASS_OUTPUT, PORT_CLASS_BIDIRECTIONAL,
-	PORT_CLASS_FEEDTHROUGH};
-
-enum port_uses {PORT_USE_DEFAULT = 0, PORT_USE_SIGNAL,
-	PORT_USE_ANALOG, PORT_USE_POWER, PORT_USE_GROUND,
-	PORT_USE_CLOCK};
-
 enum lef_pin_keys {LEF_DIRECTION = 0, LEF_USE, LEF_PORT, LEF_CAPACITANCE,
-	LEF_PIN_END};
+        LEF_PIN_END};
 
 void
 LefReadPin(lefMacro, f, pinname, pinNum, oscale)

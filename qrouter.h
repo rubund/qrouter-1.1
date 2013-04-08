@@ -286,9 +286,6 @@ void   pathto(FILE *cmd, int x, int y, int vertical, int horizontal);
 void   pathvia(FILE *cmd, int layer, int x, int y);
 
 void   helpmessage();
-void   read_def_netlist(char *filename);
-void   read_def_config(char *filename);
-void   read_def_placement(char *filename);
 
 void   print_nets(char *filename);
 void   print_routes(char *filename);

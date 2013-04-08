@@ -138,13 +138,17 @@ Completed development tasks:
    This prevents infinite looping in the 2nd
    stage.
 
+11. Clean up the DEF file reader with a proper
+   parser ported from magic, like the LEF file
+   reader was.
+
 ----------------------------------------------
 Development to do:
 ----------------------------------------------
 
-1. Clean up the DEF file reader with a proper
-   parser ported from magic, like the LEF file
-   reader was.
+1. Handle nets in the input DEF file that are
+   already routed by adding them as obstructions
+   to the route grid.
 
 2. Final stage should rip up and reroute each
    network in turn, with all crossover costing

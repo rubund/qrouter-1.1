@@ -32,6 +32,16 @@ typedef struct
 #define DO_SPECIAL  1
 #define ALL_SPECIAL 2	/* treat all nets as SPECIALNETS */
 
+/* Port classes */
+enum port_classes {PORT_CLASS_DEFAULT = 0, PORT_CLASS_INPUT,
+        PORT_CLASS_TRISTATE, PORT_CLASS_OUTPUT, PORT_CLASS_BIDIRECTIONAL,
+        PORT_CLASS_FEEDTHROUGH};
+
+/* Port uses */
+enum port_uses {PORT_USE_DEFAULT = 0, PORT_USE_SIGNAL,
+        PORT_USE_ANALOG, PORT_USE_POWER, PORT_USE_GROUND,
+        PORT_USE_CLOCK};
+
 /* Structure used to maintain default routing information for each	*/
 /* routable layer type.							*/
 
@@ -114,6 +124,9 @@ double LefGetRoutePitch(int layer);
 double LefGetRouteOffset(int layer);
 char  *LefGetRouteName(int layer);
 int    LefGetRouteOrientation(int layer);
+
+void   LefRead(char *inName);
+void   DefRead(char *inName);
 
 void LefError(char *fmt, ...);	/* Variable argument procedure requires */
 				/* parameter list.			*/

@@ -6,8 +6,8 @@ CC = gcc -m64 -fPIC
 CFLAGS = -g
 DFLAGS = -DHAVE_TYPES_H -DLIBDIR=\"${cfgdir}\" -DQVERSION=\"`cat VERSION`\"
 
-SRC=    config.c qrouter.c node.c maze.c lef.c
-OBJ=    config.o qrouter.o node.o maze.o lef.o
+SRC=    config.c qrouter.c node.c maze.c lef.c def.c
+OBJ=    config.o qrouter.o node.o maze.o lef.o def.o
 HEADER= config.h qrouter.h node.h maze.h lef.h
 
 all: qrouter
@@ -27,6 +27,9 @@ config.o: config.c config.h qrouter.h
 
 lef.o: lef.c $(HEADER)
 	$(CC) $(CFLAGS) -c lef.c $(DFLAGS)
+
+def.o: def.c $(HEADER)
+	$(CC) $(CFLAGS) -c def.c $(DFLAGS)
 
 node.o: node.c $(HEADER)
 	$(CC) $(CFLAGS) -c node.c $(DFLAGS)
