@@ -1621,7 +1621,7 @@ DefRead(char *inName)
 		token = LefNextToken(f, TRUE);
 		if (!strcmp(token, "LAYER")) {
 		    curlayer = LefReadLayer(f, FALSE);
-		    if (curlayer > Num_layers) {
+		    if (curlayer >= Num_layers) {
 			Num_layers = curlayer;		// Is this relevant?
 			// strcpy(CIFlayer[j], token);
 		    }
