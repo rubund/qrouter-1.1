@@ -878,7 +878,7 @@ DefReadPins(FILE *f, char *sname, float oscale, int total)
 		gate->gatename = NULL;	/* Use NET, but if none, use	*/
 					/* the pin name, set at end.	*/
 		gate->width = gate->height = 0;
-		curlayer = 0;
+		curlayer = -1;
 
 		/* Now do a search through the line for "+" entries	*/
 		/* And process each.					*/
@@ -929,30 +929,38 @@ DefReadPins(FILE *f, char *sname, float oscale, int total)
 		    }
 		}
 
-		/* If no NET was declared for pin, use pinname */
-		if (gate->gatename == NULL)
-		    gate->gatename = strdup(pinname);
+		if (curlayer >= 0 && curlayer < Num_layers) {
 
-		/* Make sure pin is at least the size of the route layer */
-		drect = (DSEG)malloc(sizeof(struct dseg_));
-		gate->taps[0] = drect;
-		drect->next = (DSEG)NULL;
+		    /* If no NET was declared for pin, use pinname */
+		    if (gate->gatename == NULL)
+			gate->gatename = strdup(pinname);
 
-		hwidth = LefGetRouteWidth(curlayer);
-		if (gate->width < hwidth) gate->width = hwidth;
-		if (gate->height < hwidth) gate->height = hwidth;
-		hwidth /= 2.0;
-		drect->x1 = gate->placedX - hwidth;
-		drect->y1 = gate->placedY - hwidth;
-		drect->x2 = gate->placedX + hwidth;
-		drect->y2 = gate->placedY + hwidth;
-		drect->layer = curlayer;
-		gate->obs = (DSEG)NULL;
-		gate->nodes = 1;
-		gate->glue = TRUE;
-		gate->vert = FALSE;
-		gate->next = Nlgates;
-		Nlgates = gate;
+		    /* Make sure pin is at least the size of the route layer */
+		    drect = (DSEG)malloc(sizeof(struct dseg_));
+		    gate->taps[0] = drect;
+		    drect->next = (DSEG)NULL;
+
+		    hwidth = LefGetRouteWidth(curlayer);
+		    if (gate->width < hwidth) gate->width = hwidth;
+		    if (gate->height < hwidth) gate->height = hwidth;
+		    hwidth /= 2.0;
+		    drect->x1 = gate->placedX - hwidth;
+		    drect->y1 = gate->placedY - hwidth;
+		    drect->x2 = gate->placedX + hwidth;
+		    drect->y2 = gate->placedY + hwidth;
+		    drect->layer = curlayer;
+		    gate->obs = (DSEG)NULL;
+		    gate->nodes = 1;
+		    gate->glue = TRUE;
+		    gate->vert = FALSE;
+		    gate->next = Nlgates;
+		    Nlgates = gate;
+		}
+		else {
+		    LefError("Pin %s is defined outside of route layer area!\n",
+				pinname);
+		    free(gate);
+		}
 
 		break;
 
@@ -1621,10 +1629,6 @@ DefRead(char *inName)
 		token = LefNextToken(f, TRUE);
 		if (!strcmp(token, "LAYER")) {
 		    curlayer = LefReadLayer(f, FALSE);
-		    if (curlayer >= Num_layers) {
-			Num_layers = curlayer;		// Is this relevant?
-			// strcpy(CIFlayer[j], token);
-		    }
 		}
 		if (corient == 'x') {
 		    Vert[curlayer] = 1;
