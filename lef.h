@@ -126,7 +126,7 @@ char  *LefGetRouteName(int layer);
 int    LefGetRouteOrientation(int layer);
 
 void   LefRead(char *inName);
-void   DefRead(char *inName);
+float  DefRead(char *inName);
 
 void LefError(char *fmt, ...);	/* Variable argument procedure requires */
 				/* parameter list.			*/

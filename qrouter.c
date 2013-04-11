@@ -91,6 +91,7 @@ main(argc, argv)
    char *dotptr, *sptr;
    char DEFfilename[256];
    char Filename[256];
+   double oscale;
 
    NET net;
     
@@ -174,7 +175,7 @@ main(argc, argv)
       exit(1);
    }
 
-   DefRead(DEFfilename);
+   oscale = (double)DefRead(DEFfilename);
    create_netorder();
 
    for (i = 0; i < Num_layers; i++) {
@@ -295,7 +296,7 @@ main(argc, argv)
 
    // Finish up by writing the routes to an annotated DEF file
     
-   emit_routes(DEFfilename);
+   emit_routes(DEFfilename, oscale);
 
    fprintf(stdout, "----------------------------------------------\n");
    fprintf(stdout, "Final: ");
@@ -325,7 +326,7 @@ main(argc, argv)
 /*	a width.						*/
 /*--------------------------------------------------------------*/
 
-void pathstart(FILE *cmd, int layer, int x, int y, u_char special)
+void pathstart(FILE *cmd, int layer, int x, int y, u_char special, double oscale)
 {
    if (Pathon == 1) {
       fprintf( stderr, "pathstart():  Major error.  Started a new "
@@ -340,7 +341,7 @@ void pathstart(FILE *cmd, int layer, int x, int y, u_char special)
 	 fprintf(cmd, "\n  NEW ");
       if (special)
          fprintf(cmd, "%s %d ( %d %d ) ", CIFLayer[layer],
-			(int)(100 * LefGetViaWidth(layer, layer, 0) + 0.5),
+			(int)(oscale * LefGetViaWidth(layer, layer, 0) + 0.5),
 			x, y);
       else
          fprintf(cmd, "%s ( %d %d ) ", CIFLayer[layer], x, y);
@@ -1474,7 +1475,7 @@ ROUTE createemptyroute()
 /*--------------------------------------------------------------*/
 
 int
-emit_routed_net(FILE *Cmd, NET net, u_char special)
+emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 {
    SEG seg, saveseg, lastseg;
    ROUTE rt;
@@ -1512,16 +1513,16 @@ emit_routed_net(FILE *Cmd, NET net, u_char special)
 				seg->x1, seg->y1, layer);
 		      stubroute = 1;
 		      dc = Xlowerbound + (double)seg->x1 * PitchX[layer];
-		      x = (int)((dc + 1e-4) * 100);
+		      x = (int)((dc + 1e-4) * oscale);
 		      if (dir == STUBROUTE_EW)
 			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
-		      x2 = (int)((dc + 1e-4) * 100);
+		      x2 = (int)((dc + 1e-4) * oscale);
 		      dc = Ylowerbound + (double)seg->y1 * PitchY[layer];
-		      y = (int)((dc + 1e-4) * 100);
+		      y = (int)((dc + 1e-4) * oscale);
 		      if (dir == STUBROUTE_NS)
 			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
-		      y2 = (int)((dc + 1e-4) * 100);
-		      pathstart(Cmd, seg->layer, x2, y2, special);
+		      y2 = (int)((dc + 1e-4) * oscale);
+		      pathstart(Cmd, seg->layer, x2, y2, special, oscale);
 		      if (dir == STUBROUTE_EW) {
 			 vertical = FALSE;
 			 horizontal = TRUE;
@@ -1543,18 +1544,18 @@ emit_routed_net(FILE *Cmd, NET net, u_char special)
 		   // config file and lefInfo.
 
 		   dc = Xlowerbound + (double)seg->x1 * PitchX[layer];
-		   x = (int)((dc + 1e-4) * 100);
+		   x = (int)((dc + 1e-4) * oscale);
 		   dc = Ylowerbound + (double)seg->y1 * PitchY[layer];
-		   y = (int)((dc + 1e-4) * 100);
+		   y = (int)((dc + 1e-4) * oscale);
 		   dc = Xlowerbound + (double)seg->x2 * PitchX[layer];
-		   x2 = (int)((dc + 1e-4) * 100);
+		   x2 = (int)((dc + 1e-4) * oscale);
 		   dc = Ylowerbound + (double)seg->y2 * PitchY[layer];
-		   y2 = (int)((dc + 1e-4) * 100);
+		   y2 = (int)((dc + 1e-4) * oscale);
 		   switch (seg->segtype) {
 		      case ST_WIRE:
 			 if (Pathon != 1) {	// 1st point of route seg
 			    if (special == (u_char)0)
-			       pathstart(Cmd, seg->layer, x, y, (u_char)0);
+			       pathstart(Cmd, seg->layer, x, y, (u_char)0, oscale);
 			    if (x == x2) {
 				vertical = TRUE;
 				horizontal = FALSE;
@@ -1610,15 +1611,15 @@ emit_routed_net(FILE *Cmd, NET net, u_char special)
 				seg->x2, seg->y2, layer);
 		       stubroute = 1;
 		       dc = Xlowerbound + (double)seg->x2 * PitchX[layer];
-		       x = (int)((dc + 1e-4) * 100);
+		       x = (int)((dc + 1e-4) * oscale);
 		       if (dir == STUBROUTE_EW)
 			  dc += Stub[layer][OGRID(seg->x2, seg->y2, layer)];
-		       x2 = (int)((dc + 1e-4) * 100);
+		       x2 = (int)((dc + 1e-4) * oscale);
 		       dc = Ylowerbound + (double)seg->y2 * PitchY[layer];
-		       y = (int)((dc + 1e-4) * 100);
+		       y = (int)((dc + 1e-4) * oscale);
 		       if (dir == STUBROUTE_NS)
 			  dc += Stub[layer][OGRID(seg->x2, seg->y2, layer)];
-		       y2 = (int)((dc + 1e-4) * 100);
+		       y2 = (int)((dc + 1e-4) * oscale);
 		       if (dir == STUBROUTE_EW) {
 			  vertical = FALSE;
 			  horizontal = TRUE;
@@ -1627,7 +1628,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special)
 			  vertical = TRUE;
 			  horizontal = FALSE;
 		       }
-		       if (Pathon != 1) pathstart(Cmd, layer, x, y, special);
+		       if (Pathon != 1) pathstart(Cmd, layer, x, y, special, oscale);
 		       pathto(Cmd, x2, y2, horizontal, vertical);
 		    }
 		}
@@ -1654,7 +1655,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special)
 /*   AUTHOR and DATE: steve beccue      Mon Aug 11 2003		*/
 /*--------------------------------------------------------------*/
 
-void emit_routes(char *filename)
+void emit_routes(char *filename, double oscale)
 {
     FILE *Cmd;
     int i, j, numnets;
@@ -1746,7 +1747,7 @@ void emit_routes(char *filename)
 	  /* Add last net terminal, without the semicolon */
 	  fputs(line, Cmd);
 
-	  stubroute += emit_routed_net(Cmd, net, (u_char)0);
+	  stubroute += emit_routed_net(Cmd, net, (u_char)0, oscale);
 	  fprintf(Cmd, ";\n");
        }
     }
@@ -1775,7 +1776,7 @@ void emit_routes(char *filename)
        net = Nlnets;
        for (i = 0; i < stubroute; i++) {
           for (; net; net = net->next) {
-	     if (emit_routed_net(Cmd, net, (u_char)1) > 0) {
+	     if (emit_routed_net(Cmd, net, (u_char)1, oscale) > 0) {
 		if (i < stubroute - 1) {
 		   fprintf(Cmd, " ;\n- stubroute%d\n", i + 2);
 		}

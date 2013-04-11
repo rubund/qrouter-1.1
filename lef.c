@@ -26,7 +26,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <sys/time.h>
-#include <math.h>		/* for roundf() function, if std=c99 */
+#include <math.h>
 
 #include "qrouter.h"
 #include "node.h"
@@ -954,6 +954,330 @@ parse_error:
 
 /*
  *------------------------------------------------------------
+ * Support routines for polygon reading
+ *------------------------------------------------------------
+ */
+
+#define HEDGE 0		/* Horizontal edge */
+#define REDGE 1		/* Rising edge */
+#define FEDGE -1	/* Falling edge */
+
+/*
+ *------------------------------------------------------------
+ * lefLowX ---
+ *
+ *	Sort routine to find the lowest X coordinate between
+ *	two DPOINT structures passed from qsort()
+ *------------------------------------------------------------
+ */
+
+int
+lefLowX(DPOINT *a, DPOINT *b)
+{
+    DPOINT p = *a;
+    DPOINT q = *b;
+
+    if (p->x < q->x)
+	return (-1);
+    if (p->x > q->x)
+	return (1);
+    return (0);
+}
+
+/*
+ *------------------------------------------------------------
+ * lefLowY ---
+ *
+ *	Sort routine to find the lowest Y coordinate between
+ *	two DPOINT structures passed from qsort()
+ *------------------------------------------------------------
+ */
+
+int
+lefLowY(DPOINT *a, DPOINT *b)
+{
+    DPOINT p = *a;
+    DPOINT q = *b;
+
+    if (p->y < q->y)
+	return (-1);
+    if (p->y > q->y)
+	return (1);
+    return (0);
+}
+
+/*
+ *------------------------------------------------------------
+ * lefOrient ---
+ *
+ *	Assign a direction to each of the edges in a polygon.
+ *
+ * Note that edges have been sorted, but retain the original
+ * linked list pointers, from which we can determine the
+ * path orientation
+ *
+ *------------------------------------------------------------
+ */
+
+char
+lefOrient(DPOINT *edges, int nedges, int *dir)
+{
+    int n;
+    DPOINT p, q;
+
+    for (n = 0; n < nedges; n++)
+    {
+	p = edges[n];
+	q = edges[n]->next;
+
+	if (p->y == q->y)
+	{
+	    dir[n] = HEDGE;
+	    continue;
+	}
+	if (p->x == q->x)
+	{
+	    if (p->y < q->y)
+	    {
+		dir[n] = REDGE;
+		continue;
+	    }
+	    if (p->y > q->y)
+	    {
+		dir[n] = FEDGE;
+		continue;
+	    }
+	    /* Point connects to itself */
+	    dir[n] = HEDGE;
+	    continue;
+	}
+	/* It's not Manhattan, folks. */
+	return (FALSE);
+    }
+    return (TRUE);
+}
+
+/*
+ *------------------------------------------------------------
+ * lefCross ---
+ *
+ *	See if an edge crosses a particular area.
+ *	Return TRUE if edge if vertical and if it crosses the
+ *	y-range defined by ybot and ytop.  Otherwise return
+ *	FALSE.
+ *------------------------------------------------------------
+ */
+
+char
+lefCross(DPOINT edge, int dir, double ybot, double ytop)
+{
+    double ebot, etop;
+
+    switch (dir)
+    {
+	case REDGE:
+	    ebot = edge->y;
+	    etop = edge->next->y;
+	    return (ebot <= ybot && etop >= ytop);
+
+	case FEDGE:
+	    ebot = edge->next->y;
+	    etop = edge->y;
+	    return (ebot <= ybot && etop >= ytop);
+    }
+    return (FALSE);
+}
+
+	
+/*
+ *------------------------------------------------------------
+ * LefPolygonToRects --
+ *
+ *	Convert Geometry information from a POLYGON statement
+ *	into rectangles.  NOTE:  For now, this routine
+ *	assumes that all points are Manhattan.  It will flag
+ *	non-Manhattan geometry
+ *
+ *	the DSEG pointed to by rectListPtr is updated by
+ *	having the list of rectangles appended to it.
+ *
+ *------------------------------------------------------------
+ */
+
+void
+LefPolygonToRects(DSEG *rectListPtr, DPOINT pointlist)
+{
+   DPOINT ptail, p, *pts, *edges;
+   DSEG rtail, rex, new;
+   int npts = 0;
+   int *dir;
+   int curr, wrapno, n;
+   double xbot, xtop, ybot, ytop;
+
+   if (pointlist == NULL) return;
+
+   /* Close the path by duplicating 1st point if necessary */
+
+   for (ptail = pointlist; ptail->next; ptail = ptail->next);
+
+   if ((ptail->x != pointlist->x) || (ptail->y != pointlist->y))
+   {
+	p = (DPOINT)malloc(sizeof(struct dpoint_));
+	p->x = pointlist->x;
+	p->y = pointlist->y;
+	p->layer = pointlist->layer;
+	p->next = NULL;
+	ptail->next = p;
+    }
+
+    // To do:  Break out non-manhattan parts here.
+    // See CIFMakeManhattanPath in magic-8.0
+
+    rex = NULL;
+    for (p = pointlist; p->next; p = p->next, npts++);
+    pts = (DPOINT *)malloc(npts * sizeof(DPOINT));
+    edges = (DPOINT *)malloc(npts * sizeof(DPOINT));
+    dir = (int *)malloc(npts * sizeof(int));
+    npts = 0;
+
+    for (p = pointlist; p->next; p = p->next, npts++)
+    {
+	// pts and edges are two lists of pointlist entries
+	// that are NOT linked lists and can be shuffled
+	// around by qsort().  The linked list "next" pointers
+	// *must* be retained.
+
+	pts[npts] = p;
+	edges[npts] = p;
+    }
+
+    if (npts < 4)
+    {
+	LefError("Polygon with fewer than 4 points.\n");
+	goto done;
+    }
+
+    /* Sort points by low y, edges by low x */
+    qsort((char *)pts, npts, (int)sizeof(DPOINT), (__compar_fn_t)lefLowY);
+    qsort((char *)edges, npts, (int)sizeof(DPOINT), (__compar_fn_t)lefLowX);
+
+    /* Find out which direction each edge points */
+
+    if (!lefOrient(edges, npts, dir))
+    {
+	LefError("I can't handle non-manhattan polygons!\n");
+	goto done;
+    }
+
+    /* Scan the polygon from bottom to top.  At each step, process
+     * a minimum-sized y-range of the polygon (i.e., a range such that
+     * there are no vertices inside the range).  Use wrap numbers
+     * based on the edge orientations to determine how much of the
+     * x-range for this y-range should contain material.
+     */
+
+    for (curr = 1; curr < npts; curr++)
+    {
+	/* Find the next minimum-sized y-range. */
+
+	ybot = pts[curr - 1]->y;
+	while (ybot == pts[curr]->y)
+	    if (++curr >= npts) goto done;
+	ytop = pts[curr]->y;
+
+	/* Process all the edges that cross the y-range, from left
+	 * to right.
+	 */
+
+	for (wrapno = 0, n = 0; n < npts; n++)
+	{
+	    if (wrapno == 0) xbot = edges[n]->x;
+	    if (!lefCross(edges[n], dir[n], ybot, ytop))
+		continue;
+	    wrapno += (dir[n] == REDGE) ? 1 : -1;
+	    if (wrapno == 0)
+	    {
+		xtop = edges[n]->x;
+		if (xbot == xtop) continue;
+		new = (DSEG)malloc(sizeof(struct dseg_));
+		new->x1 = xbot;
+		new->x2 = xtop;
+		new->y1 = ybot;
+		new->y2 = ytop;
+		new->layer = edges[n]->layer;
+		new->next = rex;
+		rex = new;
+	    }
+	}
+    }
+
+done:
+    free(edges);
+    free(dir);
+    free(pts);
+
+    if (*rectListPtr == NULL)
+	*rectListPtr = rex;
+    else
+    {
+	for (rtail = *rectListPtr; rtail->next; rtail = rtail->next)
+	rtail->next = rex;
+    }
+}
+
+/*
+ *------------------------------------------------------------
+ * LefReadPolygon --
+ *
+ *	Read Geometry information from a POLYGON statement
+ *
+ *------------------------------------------------------------
+ */
+
+DPOINT
+LefReadPolygon(FILE *f, int curlayer, float oscale)
+{
+    DPOINT plist = NULL, newPoint;
+    char *token;
+    double px, py;
+
+    while (1)
+    {
+	token = LefNextToken(f, TRUE);
+	if (token == NULL || *token == ';') break;
+	if (sscanf(token, "%lg", &px) != 1)
+	{
+	    LefError("Bad X value in polygon.\n");
+	    LefEndStatement(f);
+	    break;
+	}
+
+	token = LefNextToken(f, TRUE);
+	if (token == NULL || *token == ';')
+	{
+	    LefError("Missing Y value in polygon point!\n");
+	    break;
+	}
+	if (sscanf(token, "%lg", &py) != 1)
+	{
+	    LefError("Bad Y value in polygon.\n");
+	    LefEndStatement(f);
+	    break;
+	}
+
+	newPoint = (DPOINT)malloc(sizeof(struct dpoint_));
+	newPoint->x = px / (double)oscale;
+	newPoint->y = py / (double)oscale;
+	newPoint->layer = curlayer;
+	newPoint->next = plist;
+	plist = newPoint;
+    }
+
+    return plist;
+}
+
+/*
+ *------------------------------------------------------------
  * LefReadGeometry --
  *
  *	Read Geometry information from a LEF file.
@@ -982,6 +1306,7 @@ LefReadGeometry(GATE lefMacro, FILE *f, float oscale)
     int keyword;
     DSEG rectList = (DSEG)NULL;
     DSEG paintrect, newRect;
+    DPOINT pointlist;
 
     static char *geometry_keys[] = {
 	"LAYER",
@@ -1028,7 +1353,8 @@ LefReadGeometry(GATE lefMacro, FILE *f, float oscale)
 		LefEndStatement(f);
 		break;
 	    case LEF_POLYGON:
-		LefEndStatement(f);
+		pointlist = LefReadPolygon(f, curlayer, oscale);
+		LefPolygonToRects(&rectList, pointlist);
 		break;
 	    case LEF_VIA:
 		LefEndStatement(f);

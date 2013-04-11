@@ -274,14 +274,14 @@ void   dosecondstage();
 int    doroute(NET net, u_char stage);
 int    route_segs(ROUTE rt, u_char stage);
 ROUTE  createemptyroute();
-void   emit_routes(char *filename);
+void   emit_routes(char *filename, double oscale);
 
 void   createMask();
 void   fillMask();
 void   setMask();
 void   expandMask();
 
-void   pathstart(FILE *cmd, int layer, int x, int y, u_char special);
+void   pathstart(FILE *cmd, int layer, int x, int y, u_char special, double oscale);
 void   pathto(FILE *cmd, int x, int y, int vertical, int horizontal);
 void   pathvia(FILE *cmd, int layer, int x, int y);
 

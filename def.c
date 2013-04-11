@@ -366,6 +366,7 @@ endCoord:
  *------------------------------------------------------------
  */
 
+void
 DefReadGatePin(NET net, NODE node, char *instname, char *pinname, double *home)
 {
     NODE node2;
@@ -1423,7 +1424,8 @@ DefReadComponents(FILE *f, char *sname, float oscale, int total)
  *	components, pins, and nets.
  *
  * Results:
- *	None.
+ *	Returns the units scale, so the routed output can be
+ *	scaled to match the DEF file header.
  *
  * Side Effects:
  *	Many.
@@ -1443,7 +1445,7 @@ enum def_sections {DEF_VERSION = 0, DEF_NAMESCASESENSITIVE,
 	DEF_CONSTRAINTS, DEF_GROUPS, DEF_EXTENSION,
 	DEF_END};
 
-void
+float
 DefRead(char *inName)
 {
     FILE *f;
@@ -1500,7 +1502,7 @@ DefRead(char *inName)
     {
 	fprintf(stderr, "Cannot open input file: ");
 	perror(filename);
-	return;
+	return (float)0.0;
     }
 
     /* Initialize */
@@ -1744,4 +1746,5 @@ DefRead(char *inName)
     /* Cleanup */
 
     if (f != NULL) fclose(f);
+    return oscale;
 }
