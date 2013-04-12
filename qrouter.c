@@ -1596,6 +1596,10 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		   lastseg = seg;
 		}
 
+		// For stub routes, reset the path between terminals, since
+		// the stubs are not connected.
+		if (special == (u_char)1 && Pathon != -1) Pathon = 0;
+
 		// Check last position for terminal offsets
 		if (lastseg && ((lastseg != saveseg)
 				|| (lastseg->segtype == ST_WIRE))) {
