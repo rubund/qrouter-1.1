@@ -1,0 +1,55 @@
+#!/bin/sh
+
+AC_INIT(VERSION,, eda-dev@opencircuitdesign.com)
+AC_PREREQ(2.60)
+AC_CONFIG_SRCDIR([Makefile.in])
+
+# Determine the host and build type.
+# ===========================================================================
+AC_CANONICAL_HOST
+
+PACKAGE=qrouter
+VERSION=`cat ./VERSION | cut -d. -f1-2`
+
+AC_SUBST(VERSION)
+AC_ARG_PROGRAM
+
+# Required programs
+# ===========================================================================
+AC_PROG_CC
+AC_PROG_CPP
+AC_ISC_POSIX
+if test "x$U" != "x"; then
+  AC_MSG_ERROR(Compiler not ANSI compliant)
+fi
+AC_PROG_INSTALL
+AC_PROG_RANLIB
+AC_CHECK_PROG(AUTOCONF, autoconf, autoconf, :)
+AC_CHECK_PROG(CP, cp, cp, :)
+AC_CHECK_PROG(RM, rm, rm, :)
+
+AC_LANG_C
+AC_HEADER_STDC
+AC_CHECK_FUNCS(setenv putenv)
+
+# Options
+# =========================================
+
+QROUTER_LIB_DIR=${ac_default_prefix}/share/qrouter
+AC_ARG_WITH(libdir,
+[  --with-libdir=DIR           path to qrouter default config files], [
+   if test -d "$withval"; then
+      QROUTER_LIB_DIR=$withval
+   fi
+], [])
+AC_DEFINE_UNQUOTED(QROUTER_LIB_DIR, "$QROUTER_LIB_DIR")
+
+AC_DEFINE_UNQUOTED(VERSION, "$VERSION")
+
+AC_SUBST(CFLAGS)
+AC_SUBST(LDFLAGS)
+AC_SUBST(LD)
+AC_SUBST(STDLIBS)
+
+AC_OUTPUT(Makefile)
+

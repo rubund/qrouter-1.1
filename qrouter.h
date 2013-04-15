@@ -1,8 +1,8 @@
 /*--------------------------------------------------------------*/
 /* qrouter.h -- general purpose autorouter                     	*/
 /*--------------------------------------------------------------*/
-/*                Personal work of Steve Beccue                 */
-/*            Copyright (C) 2003 - All Rights Reserved          */
+/*            Steve Beccue and Tim Edwards			*/
+/*            Copyright (C) 2003 - 2013 - All Rights Reserved   */
 /*--------------------------------------------------------------*/
 
 #ifndef QROUTER_H
@@ -10,8 +10,6 @@
 #define OGRID(x, y, layer) ((int)((x) + ((y) * NumChannelsX[(layer)])))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
-
-#define VERSION "Version 1.0 June 2011"
 
 #define TRUE    1
 #define FALSE   0
@@ -256,7 +254,7 @@ extern NODE  *Nodeloc[MAX_LAYERS];	// nodes are attached to grid points
 					// for reverse lookup
 extern NODE  *Nodesav[MAX_LAYERS];	// copy of Nodeloc used for restoring
 					// Nodeloc after net rip-up
-extern PROUTE  Pr[PRindMAX + 1];	// put this in the Obs2 array
+extern PROUTE  *Pr;			// put this in the Obs2 array
 extern DSEG  UserObs;			// user-defined obstruction layers
 
 extern int   Numnodes;

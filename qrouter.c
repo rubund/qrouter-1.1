@@ -40,7 +40,7 @@ u_int  *Obs2[MAX_LAYERS];    // used for pt->pt routes on layer
 float  *Stub[MAX_LAYERS];    // used for stub routing to pins
 NODE   *Nodeloc[MAX_LAYERS]; // nodes are here. . .
 NODE   *Nodesav[MAX_LAYERS]; // . . . and here (but not to be altered)
-PROUTE Pr[PRindMAX + 1];     // put this in the Obs2 array
+PROUTE *Pr;     	     // put this in the Obs2 array
 DSEG   UserObs;		     // user-defined obstruction layers
 
 int   Numnodes = 0;
@@ -77,9 +77,8 @@ void openFailFile()
 /*   SIDE EFFECTS: 						*/
 /*--------------------------------------------------------------*/
 
-main(argc, argv)
-   int	argc;
-   char	*argv[];
+int
+main(int argc, char *argv[])
 {
    int	i, j;
    int length, width;
@@ -125,8 +124,8 @@ main(argc, argv)
 
    if (!configFILEptr) {
       char *configtmp;
-      configtmp = malloc(strlen(configfile) + strlen(LIBDIR) + 2);
-      sprintf(configtmp, "%s/%s", LIBDIR, configfile);
+      configtmp = malloc(strlen(configfile) + strlen(QROUTER_LIB_DIR) + 2);
+      sprintf(configtmp, "%s/%s", QROUTER_LIB_DIR, configfile);
       if (configfile != configdefault) free(configfile);
       configfile = configtmp;
       configFILEptr = fopen(configfile, "r" );
@@ -272,6 +271,9 @@ main(argc, argv)
    // print_nodes( "nodes.details" );
    // print_nlnets( "netlist.out" );
    // print_obs( "obs.out" );
+
+   // Grab the whopping big memory block for Pr[]
+   Pr = (PROUTE *)malloc((PRindMAX + 1) * sizeof(PROUTE));
 
    for (i = 0; i < Numnets; i++) {
       net = getnettoroute(i);

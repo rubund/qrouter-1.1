@@ -1,0 +1,41 @@
+#
+# qrouter Makefile
+#
+
+# Main compiler arguments
+CFLAGS = @CFLAGS@
+DEFS = @DEFS@
+LIBS = @LIBS@
+LDFLAGS = @LDFLAGS@
+INSTALL = @INSTALL@
+prefix = @prefix@
+
+OBJECTS = qrouter.o maze.o node.o config.o lef.o def.o
+SOURCES := $(patsubst %.o,%.c,$(OBJECTS))
+TARGETS := qrouter$(EXEEXT)
+
+BININSTALL = ${prefix}/bin
+
+all: $(TARGETS)
+
+qrouter$(EXEEXT): $(OBJECTS)
+	$(CC) $(LDFLAGS) $(OBJECTS) -o $@ $(LIBS) -lm
+
+install:
+	@echo "Installing qrouter"
+	$(INSTALL) -d ${BININSTALL}
+	$(INSTALL) qrouter ${BININSTALL}
+
+uninstall:
+	$(RM) -f ${BININSTALL}/qrouter
+
+clean:
+	$(RM) -f $(OBJECTS)
+	$(RM) -f $(TARGETS)
+
+veryclean:
+	$(RM) -f $(OBJECTS)
+	$(RM) -f $(TARGETS)
+
+.c.o:
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(DEFS) -c $< -o $@
