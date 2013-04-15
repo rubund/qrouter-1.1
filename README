@@ -56,11 +56,23 @@ multiple passes over many points.
 Compilation & installation:
 ----------------------------------------------
 
- Edit "makefile" to change any options
+The system runs under autoconf, and so has
+the standard compile and install sequence:
 
- Run "make" from the top level directory
+	./configure
+	make
+	make install
 
- Run "make install" to install
+Options to configure:
+
+	--with-prefix=<prefix>
+		overrides the standard install
+		location of /usr/local
+
+	--with-libdir=<path>
+		overrides the standard search
+		location for configuration
+		files, /usr/local/share/qrouter
 
 ----------------------------------------------
 Usage:
