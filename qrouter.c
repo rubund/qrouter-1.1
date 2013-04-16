@@ -36,11 +36,10 @@ NETLIST Abandoned;	// list of nets that will never route
 
 u_char *Mask[MAX_LAYERS];    // mask out best area to route, expand as needed
 u_int  *Obs[MAX_LAYERS];     // net obstructions in layer
-u_int  *Obs2[MAX_LAYERS];    // used for pt->pt routes on layer
+PROUTE *Obs2[MAX_LAYERS];    // used for pt->pt routes on layer
 float  *Stub[MAX_LAYERS];    // used for stub routing to pins
 NODE   *Nodeloc[MAX_LAYERS]; // nodes are here. . .
 NODE   *Nodesav[MAX_LAYERS]; // . . . and here (but not to be altered)
-PROUTE *Pr;     	     // put this in the Obs2 array
 DSEG   UserObs;		     // user-defined obstruction layers
 
 int   Numnodes = 0;
@@ -49,7 +48,6 @@ int   Numgates = 0;
 int   Numpins = 0;
 int   Verbose = 0;
 int   PRind = 0;
-int   Debug = 0;                 // print level for debug information
 int   CurrentPass = 0;           // Current Pass
 
 /*--------------------------------------------------------------*/
@@ -97,13 +95,10 @@ main(int argc, char *argv[])
    Filename[0] = 0;
    DEFfilename[0] = 0;
 
-   while ((i = getopt(argc, argv, "c:d:i:hv:")) != -1) {
+   while ((i = getopt(argc, argv, "c:i:hv:")) != -1) {
       switch (i) {
 	 case 'c':
 	    configfile = strdup(optarg);
-	    break;
-	 case 'd':
-	    Debug = atoi(optarg);
 	    break;
 	 case 'v':
 	    Verbose = atoi(optarg);
@@ -216,8 +211,8 @@ main(int argc, char *argv[])
 	 exit(4);
       }
 
-      Obs2[i] = (u_int *)calloc(NumChannelsX[i] * NumChannelsY[i],
-			sizeof(u_int));
+      Obs2[i] = (PROUTE *)calloc(NumChannelsX[i] * NumChannelsY[i],
+			sizeof(PROUTE));
       if (!Obs2[i]) {
 	 fprintf( stderr, "Out of memory 3.\n");
 	 exit(5);
@@ -270,10 +265,6 @@ main(int argc, char *argv[])
    // print_nlgates( "net.details" );
    // print_nodes( "nodes.details" );
    // print_nlnets( "netlist.out" );
-   // print_obs( "obs.out" );
-
-   // Grab the whopping big memory block for Pr[]
-   Pr = (PROUTE *)malloc((PRindMAX + 1) * sizeof(PROUTE));
 
    for (i = 0; i < Numnets; i++) {
       net = getnettoroute(i);
@@ -1016,13 +1007,13 @@ int route_segs(ROUTE rt, u_char stage)
   char filename[32];
   int  dist, max, min, maxcost;
   int  thisnetnum, thisindex, index, pass;
-  int  bestX, bestY, bestL;
-  int  prind;
+  GRIDP best, curpt;
   int  result;
   int  rval;
   u_char first = (u_char)1;
   u_char check_order[6];
   DPOINT n1tap, n2tap;
+  PROUTE *Pr;
 
   // Make Obs2[][] a copy of Obs[][].  Convert pin obstructions to
   // terminal positions for the net being routed.
@@ -1031,48 +1022,46 @@ int route_segs(ROUTE rt, u_char stage)
       for (x = 0; x < NumChannelsX[i]; x++) {
 	  for (y = 0; y < NumChannelsY[i]; y++) {
 	      netnum = Obs[i][OGRID(x, y, i)];
-	      Obs2[i][OGRID(x, y, i)] = (netnum & ~PINOBSTRUCTMASK);
-	      dir = netnum & PINOBSTRUCTMASK;
-	      if ((dir != 0) && (dir == STUBROUTE_X)) {
-		 if ((netnum & ~PINOBSTRUCTMASK) == rt->netnum)
-		    Obs2[i][OGRID(x, y, i)] = 0;	// STUBROUTE_X not routable
+	      Pr = &Obs2[i][OGRID(x, y, i)];
+	      if (netnum != 0) {
+	         Pr->flags = 0;		// Clear all flags
+	         Pr->prdata.net = (netnum & ~PINOBSTRUCTMASK);
+	         dir = netnum & PINOBSTRUCTMASK;
+	         if ((dir != 0) && (dir == STUBROUTE_X)) {
+		    if ((netnum & ~PINOBSTRUCTMASK) == rt->netnum)
+		       Pr->prdata.net = 0;	// STUBROUTE_X not routable
+	         }
+	      } else {
+	         Pr->flags = PR_COST;		// This location is routable
+	         Pr->prdata.cost = MAXRT;
 	      }
 	  }
       }
   }
 
-  PRind = 0;  	// Start assigning indexes after this.  Don't confuse Pr[1]
-		// with source, Pr[2] with dest:  Source never gets assigned
-		// a Pr[], and dest gets its own number unrelated to TARGNETNUM.
-
-  // Pr[0] will be used to hold information about the route cost at target
-  // Note that it will be placed at whichever tap has the lowest cost route.
-
-  Pr[0].pred = 0;
-  Pr[0].flags = (u_char)0;
-  Pr[0].cost = MAXRT;
+  best.cost = MAXRT;
 
   // Stack of points to search
   glist = (POINT)NULL;
   gunproc = (POINT)NULL;
 
-  // We start at the node referenced by the route structure, and set all
-  // of its taps to SRCNETNUM, as well as all connected routes.
+  // We start at the node referenced by the route structure, and flag all
+  // of its taps as PR_SOURCE, as well as all connected routes.
 
   n1 = rt->node;
   bbox.x2 = bbox.y2 = 0;
   bbox.x1 = NumChannelsX[0];
   bbox.y1 = NumChannelsY[0];
-  set_node_to_net(n1, SRCNETNUM, &glist, &bbox);
+  set_node_to_net(n1, PR_SOURCE, &glist, &bbox);
 
   // Now search for all other nodes on the same net that have not yet been
-  // routed, and set all of their taps to TARGNETNUM
+  // routed, and flag all of their taps as PR_TARGET
 
   result = 0;
   for (n2 = Nlnodes; n2; n2 = n2->next) {
      if (n2 == n1) continue;
      if (n2->netnum != n1->netnum) continue;
-     if (set_node_to_net(n2, TARGNETNUM, NULL, &bbox) == 0) {
+     if (set_node_to_net(n2, PR_TARGET, NULL, &bbox) == 0) {
 	n2save = n2;
 	result = 1;
      }
@@ -1153,81 +1142,78 @@ int route_segs(ROUTE rt, u_char stage)
 
     while (gpoint = glist) {
 
-      NPX = gpoint->x1;
-      NPY = gpoint->y1;
-      CurrentLay = gpoint->layer;
       glist = gpoint->next;
 
-      thisnetnum = Obs2[CurrentLay][OGRID(NPX, NPY, CurrentLay)];
-      if (thisnetnum & SRCFLAG) {
-	 thisindex = (thisnetnum & ~SRCFLAG);
-	 thisnetnum = SRCNETNUM;
-      }
-      else if (thisnetnum & RTFLAG) {
-         thisindex = (thisnetnum & ~RTFLAG);
-      }
-      else
-	 thisindex = 0;
+      curpt.x = gpoint->x1;
+      curpt.y = gpoint->y1;
+      curpt.lay = gpoint->layer;
+	
+      Pr = &Obs2[curpt.lay][OGRID(curpt.x, curpt.y, curpt.lay)];
 
       // ignore grid positions that have already been processed
-      if (thisindex && (Pr[thisindex].flags & PR_PROCESSED)) {
+      if (Pr->flags & PR_PROCESSED) {
 	 free(gpoint);
 	 continue;
       }
 
+      if (Pr->flags & PR_COST)
+	 curpt.cost = Pr->prdata.cost;	// Route points, including target
+      else
+	 curpt.cost = 0;			// For source tap points
+
       // if the grid position is the destination, save the position and
       // cost if minimum.
 
-      if (thisnetnum == TARGNETNUM) {
+      if (Pr->flags & PR_TARGET) {
 
-	 if (first) {
-	    fprintf(stdout, "Found a route of cost ");
-	    first = (u_char)0;
+ 	 if (curpt.cost < best.cost) {
+	    if (first) {
+	       fprintf(stdout, "Found a route of cost ");
+	       first = (u_char)0;
+	    }
+	    else
+	       fprintf(stdout, "|");
+	    fprintf(stdout, "%d", curpt.cost);
+	    fflush(stdout);
+
+	    // This position may be on a route, not at a terminal, so
+	    // record it.
+	    best.x = curpt.x;
+	    best.y = curpt.y;
+	    best.lay = curpt.lay;
+	    best.cost = curpt.cost;
+
+	    // If a complete route has been found, then there's no point
+	    // in searching paths with a greater cost than this one.
+	    if (best.cost < maxcost) maxcost = best.cost;
 	 }
-	 else
-	    fprintf(stdout, "|");
-	 fprintf(stdout, "%d", Pr[0].cost);
-	 fflush(stdout);
-
-	 // This position may be on a route, not at a terminal, so
-	 // record it.
-	 bestX = NPX;
-	 bestY = NPY;
-	 bestL = CurrentLay;
-
-	 // If a complete route has been found, then there's no point
-	 // in searching paths with a greater cost than this one.
-	 if (Pr[0].cost < maxcost) maxcost = Pr[0].cost;
 
          // Don't continue processing from the target
 	 free(gpoint);
 	 continue;
       }
 
-      if (thisnetnum != SRCNETNUM) {
+      if (curpt.cost < MAXRT) {
 
-         if (Pr[thisindex].cost < MAXRT) {
+	 // Severely limit the search space by not processing anything that
+	 // is not under the current route mask, which identifies a narrow
+	 // "best route" solution.
 
-	    // Severely limit the search space by not processing anything that
-	    // is not under the current route mask, which identifies a narrow
-	    // "best route" solution.
+	 // if (Mask[curpt.lay][OGRID(curpt.x, curpt.y, curpt.lay)] == (u_char)0) {
+	 //    gpoint->next = gunproc;
+	 //    gunproc = gpoint;
+	 //    continue;
+	 // }
 
-	    // if (Mask[CurrentLay][OGRID(NPX, NPY, CurrentLay)] == (u_char)0) {
-	    //    gpoint->next = gunproc;
-	    //    gunproc = gpoint;
-	    //    continue;
-	    // }
+         // Quick check:  Limit maximum cost to limit search space
+         // Move the point onto the "unprocessed" stack and we'll pick up
+         // from this point on the next pass, if needed.
 
-            // Quick check:  Limit maximum cost to limit search space
-            // Move the point onto the "unprocessed" stack and we'll pick up
-            // from this point on the next pass, if needed.
-
-	    // else
-            if (Pr[thisindex].cost > maxcost) {
-	       gpoint->next = gunproc;
-	       gunproc = gpoint;
-	       continue;
-	    }
+	 // else
+         if (curpt.cost > maxcost) {
+	    gpoint->next = gunproc;
+	    gunproc = gpoint;
+	    continue;
 	 }
       }
       free(gpoint);
@@ -1235,7 +1221,7 @@ int route_segs(ROUTE rt, u_char stage)
       // check east/west/north/south, and bottom to top
 
       // 1st optimization:  Direction of route on current layer is preferred.
-      o = LefGetRouteOrientation(CurrentLay);
+      o = LefGetRouteOrientation(curpt.lay);
       if (o == 1) {			// horizontal routes---check EAST and WEST first
 	 check_order[0] = EAST;
 	 check_order[1] = WEST;
@@ -1263,12 +1249,12 @@ int route_segs(ROUTE rt, u_char stage)
       for (i = 5; i >= 0; i--) {
 	 switch (check_order[i]) {
 	    case EAST:
-               if ((NPX + 1) < NumChannelsX[CurrentLay]) {
-         	  if ((result = eval_pt(NPX + 1, NPY, CurrentLay, thisindex, stage)) == 1) {
+               if ((curpt.x + 1) < NumChannelsX[curpt.lay]) {
+         	  if ((result = eval_pt(&curpt, PR_PRED_W, stage)) == 1) {
          	     gpoint = (POINT)malloc(sizeof(struct point_));
-         	     gpoint->x1 = NPX + 1;
-         	     gpoint->y1 = NPY;
-         	     gpoint->layer = CurrentLay;
+         	     gpoint->x1 = curpt.x + 1;
+         	     gpoint->y1 = curpt.y;
+         	     gpoint->layer = curpt.lay;
          	     gpoint->next = glist;
          	     glist = gpoint;
                    }
@@ -1276,12 +1262,12 @@ int route_segs(ROUTE rt, u_char stage)
 	       break;
 
 	    case WEST:
-               if ((NPX - 1) >= 0) {
-         	  if ((result = eval_pt(NPX - 1, NPY, CurrentLay, thisindex, stage)) == 1) {
+               if ((curpt.x - 1) >= 0) {
+         	  if ((result = eval_pt(&curpt, PR_PRED_E, stage)) == 1) {
          	     gpoint = (POINT)malloc(sizeof(struct point_));
-         	     gpoint->x1 = NPX - 1;
-         	     gpoint->y1 = NPY;
-         	     gpoint->layer = CurrentLay;
+         	     gpoint->x1 = curpt.x - 1;
+         	     gpoint->y1 = curpt.y;
+         	     gpoint->layer = curpt.lay;
          	     gpoint->next = glist;
          	     glist = gpoint;
                   }
@@ -1289,12 +1275,12 @@ int route_segs(ROUTE rt, u_char stage)
 	       break;
          
 	    case SOUTH:
-               if ((NPY - 1) >= 0) {
-         	  if ((result = eval_pt(NPX, NPY - 1, CurrentLay, thisindex, stage)) == 1) {
+               if ((curpt.y - 1) >= 0) {
+         	  if ((result = eval_pt(&curpt, PR_PRED_N, stage)) == 1) {
          	     gpoint = (POINT)malloc(sizeof(struct point_));
-         	     gpoint->x1 = NPX;
-         	     gpoint->y1 = NPY - 1;
-         	     gpoint->layer = CurrentLay;
+         	     gpoint->x1 = curpt.x;
+         	     gpoint->y1 = curpt.y - 1;
+         	     gpoint->layer = curpt.lay;
          	     gpoint->next = glist;
          	     glist = gpoint;
                    }
@@ -1302,12 +1288,12 @@ int route_segs(ROUTE rt, u_char stage)
 	       break;
 
 	    case NORTH:
-               if ((NPY + 1) < NumChannelsY[CurrentLay]) {
-         	  if ((result = eval_pt(NPX, NPY + 1, CurrentLay, thisindex, stage)) == 1) {
+               if ((curpt.y + 1) < NumChannelsY[curpt.lay]) {
+         	  if ((result = eval_pt(&curpt, PR_PRED_S, stage)) == 1) {
          	     gpoint = (POINT)malloc(sizeof(struct point_));
-         	     gpoint->x1 = NPX;
-         	     gpoint->y1 = NPY + 1;
-         	     gpoint->layer = CurrentLay;
+         	     gpoint->x1 = curpt.x;
+         	     gpoint->y1 = curpt.y + 1;
+         	     gpoint->layer = curpt.lay;
          	     gpoint->next = glist;
          	     glist = gpoint;
                   }
@@ -1315,12 +1301,12 @@ int route_segs(ROUTE rt, u_char stage)
 	       break;
       
 	    case DOWN:
-               if (CurrentLay > 0) {
-         	  if ((result = eval_pt(NPX, NPY, CurrentLay - 1, thisindex, stage)) == 1) {
+               if (curpt.lay > 0) {
+         	  if ((result = eval_pt(&curpt, PR_PRED_U, stage)) == 1) {
          	     gpoint = (POINT)malloc(sizeof(struct point_));
-         	     gpoint->x1 = NPX;
-         	     gpoint->y1 = NPY;
-         	     gpoint->layer = CurrentLay - 1;
+         	     gpoint->x1 = curpt.x;
+         	     gpoint->y1 = curpt.y;
+         	     gpoint->layer = curpt.lay - 1;
          	     gpoint->next = glist;
          	     glist = gpoint;
          	  }
@@ -1328,12 +1314,12 @@ int route_segs(ROUTE rt, u_char stage)
 	       break;
          
 	    case UP:
-               if (CurrentLay < (Num_layers - 1)) {
-         	  if ((result = eval_pt(NPX, NPY, CurrentLay + 1, thisindex, stage)) == 1) {
+               if (curpt.lay < (Num_layers - 1)) {
+         	  if ((result = eval_pt(&curpt, PR_PRED_D, stage)) == 1) {
          	     gpoint = (POINT)malloc(sizeof(struct point_));
-         	     gpoint->x1 = NPX;
-         	     gpoint->y1 = NPY;
-         	     gpoint->layer = CurrentLay + 1;
+         	     gpoint->x1 = curpt.x;
+         	     gpoint->y1 = curpt.y;
+         	     gpoint->layer = curpt.lay + 1;
          	     gpoint->next = glist;
          	     glist = gpoint;
          	  }
@@ -1343,32 +1329,8 @@ int route_segs(ROUTE rt, u_char stage)
          }
 
       // Mark this node as processed
-      Pr[thisindex].flags |= PR_PROCESSED;
+      Pr->flags |= PR_PROCESSED;
 
-      if (PRind >= PRindMAX) {
-	 fprintf(stdout, "\n");
-	 fflush(stdout);
-	 fprintf(stderr, "route.c:route_segs().  PRind hit "
-			"PRindMAX\nThis is a serious error\n");
-	 if (!Failfptr) openFailFile();
-	 fprintf(Failfptr, "# PRind hit PRindMAX\n");
-	 fprintf(Failfptr, "(%g,%g) <==> (%g,%g) net=%s\tRoute=%d\n",
-		     n1tap->gridx * PitchX[0], n1tap->gridy * PitchY[0], 
-		     n2tap->gridx * PitchX[0], n2tap->gridy * PitchY[0],
-		     n1->netname, TotalRoutes);
-	 fprintf(CNfptr, "# PRind hit PRindMAX\nRoute Priority\t%s\n",
-			n1->netname);
-	 fflush(CNfptr);
-	 fflush(Failfptr);
-	    
-	 while (glist) {
-	    gpoint = glist;
-	    glist = glist->next;
-	    free(gpoint);
-	 }
-	 rval = -1;
-	 goto done;
-      }
     } // while stack is not empty
 
     while (glist) {
@@ -1379,15 +1341,14 @@ int route_segs(ROUTE rt, u_char stage)
 
     // If we found a route, save it and return
 
-    if (Pr[0].cost <= maxcost) {
-	NPX = bestX;
-	NPY = bestY;
-	CurrentLay = bestL;
-	Obs2[CurrentLay][OGRID(NPX, NPY, CurrentLay)] = RTFLAG;
-	commit_proute(rt, stage);
-	fprintf(stdout, "\nCommit to a route of cost %d\n", Pr[0].cost);
+    if (best.cost <= maxcost) {
+	curpt.x = best.x;
+	curpt.y = best.y;
+	curpt.lay = best.lay;
+	commit_proute(rt, &curpt, stage);
+	fprintf(stdout, "\nCommit to a route of cost %d\n", best.cost);
 	fprintf(stdout, "Between positions (%d %d) and (%d %d)\n",
-		bestX, bestY, NPX, NPY);
+		best.x, best.y, curpt.x, curpt.y);
 	rval = 1;
 	goto done;	/* route success */
     }
@@ -1820,7 +1781,6 @@ void helpmessage()
     fprintf(stdout, "\t-c <file>\t\t\tConfiguration file name if not route.cfg.\n");
     fprintf(stdout, "\t-v <level>\t\t\tVerbose output level.\n");
     fprintf(stdout, "\t-i <file>\t\t\tPrint route names and pitches and exit.\n");
-    // fprintf(stdout, "\t-d\t\t\tDebug file output.\n");
     fprintf(stdout, "\n");
     fprintf(stdout, "%s\n", VERSION);
 

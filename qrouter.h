@@ -58,20 +58,44 @@ typedef unsigned long  u_long;
 #define UP	4
 #define DOWN	5
 
+// define a structure containing x, y, and layer
+
+typedef struct gridp_ GRIDP;
+
+struct gridp_ {
+   int x;
+   int y;
+   int lay;
+   u_int cost;
+};
+
 typedef struct proute_ PROUTE;
 
 struct proute_ {        // partial route
-  int pred;             // predecessor proute index
-  int cost;		// cost of route coming from predecessor
-  int layer;            // load into struct seg_
-  int x1, y1;
-  u_char flags; 	// values PR_PROCESSED and PR_CONFLICT
+   u_char flags; 	// values PR_PROCESSED and PR_CONFLICT
+   union {
+      u_int cost;	// cost of route coming from predecessor
+      u_int net;	// net number at route point
+   } prdata;
 };
 
 // Bit values for "flags" in PROUTE
 
-#define PR_PROCESSED 1
-#define PR_CONFLICT  2
+#define PR_PRED_DMASK	0x07		// Mask for directional bits
+
+#define PR_PRED_NONE	0x00		// This node does not have a predecessor
+#define PR_PRED_N	0x01		// Predecessor is north
+#define PR_PRED_S	0x02		// Predecessor is south
+#define PR_PRED_E	0x03		// Predecessor is east
+#define PR_PRED_W	0x04		// Predecessor is west
+#define PR_PRED_U	0x05		// Predecessor is up
+#define PR_PRED_D	0x06		// Predecessor is down
+
+#define PR_PROCESSED	0x08		// Tag to avoid visiting more than once
+#define PR_CONFLICT	0x10		// Two nets collide here during stage 2
+#define PR_SOURCE	0x20		// This is a source node
+#define PR_TARGET	0x80		// This is a target node
+#define PR_COST		0x40		// if 1, use prdata.cost, not prdata.net
 
 // Linked string list
 
@@ -223,15 +247,12 @@ struct netlist_ {
 };
 
 #define MAXRT		10000000		// "Infinite" route cost
-#define PRindMAX	((u_int)0x10000000)	// Good to 8192 x 8192 x 4
-#define RTFLAG		((u_int)0x80000000)
-#define SRCFLAG		((u_int)0x40000000)	// Location is a source node
-#define PINOBSTRUCTMASK	((u_int)0x60000000) 	// takes values from below
 
 // The following values are added to the Obs[] structure for unobstructed
 // route positions close to a terminal, but not close enough to connect
 // directly.  They describe which direction to go to reach the terminal.
 
+#define PINOBSTRUCTMASK	((u_int)0x60000000) 	// takes values from below
 #define STUBROUTE_NS	((u_int)0x20000000)  // route north or south to reach terminal
 #define STUBROUTE_EW	((u_int)0x40000000)  // route east or west to reach terminal
 #define STUBROUTE_X	((u_int)0x60000000)  // diagonal---not routable
@@ -247,14 +268,13 @@ extern GATE   Nlgates;
 extern NET    Nlnets;
 extern NODE   Nlnodes;
 
-extern u_int *Obs[MAX_LAYERS];		// obstructions by layer, y, x
-extern u_int *Obs2[MAX_LAYERS]; 	// working copy of Obs 
-extern float *Stub[MAX_LAYERS];		// stub route distances to pins
-extern NODE  *Nodeloc[MAX_LAYERS];	// nodes are attached to grid points
+extern u_int  *Obs[MAX_LAYERS];		// obstructions by layer, y, x
+extern PROUTE *Obs2[MAX_LAYERS]; 	// working copy of Obs 
+extern float  *Stub[MAX_LAYERS];	// stub route distances to pins
+extern NODE   *Nodeloc[MAX_LAYERS];	// nodes are attached to grid points
 					// for reverse lookup
-extern NODE  *Nodesav[MAX_LAYERS];	// copy of Nodeloc used for restoring
+extern NODE   *Nodesav[MAX_LAYERS];	// copy of Nodeloc used for restoring
 					// Nodeloc after net rip-up
-extern PROUTE  *Pr;			// put this in the Obs2 array
 extern DSEG  UserObs;			// user-defined obstruction layers
 
 extern int   Numnodes;
@@ -264,7 +284,6 @@ extern int   Numpins;
 extern int   Verbose;
 extern int   Loops;
 extern int   PRind;
-extern int   Debug;
 extern int   CurrentPass;
 
 NET    getnettoroute();

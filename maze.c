@@ -22,47 +22,16 @@
 
 extern int TotalRoutes;
 
-int    CurrentLay;
-int    NPX, NPY;
-
-/*--------------------------------------------------------------*/
-/* make_new_pr() ---						*/
-/*								*/
-/* Create a new "potential route" structure and fill its values	*/
-/*--------------------------------------------------------------*/
-
-int
-make_new_pr(x, y, lay)
-{
-   int k;
-
-   PRind++;
-
-   // Check bounds on PRind
-   if (PRind >= PRindMAX) return -1;
-
-   /* Create new potential route structure */
-   k = PRind;
-   Pr[k].pred = 0;
-   Pr[k].flags = 0;
-   Pr[k].cost = 0;
-   Pr[k].x1 = x;
-   Pr[k].y1 = y;
-   Pr[k].layer = lay;
-
-   return k;
-}
-
 /*--------------------------------------------------------------*/
 /* set_node_to_net() ---					*/
 /*								*/
-/* Change the Obs2[][] matrix values to "newnet" for all tap	*/
+/* Change the Obs2[][] flag values to "newflags" for all tap	*/
 /* positions of route terminal "node".  Then follow all routes	*/
 /* connected to "node", updating their positions.  Where those	*/
 /* routes connect to other nodes, repeat recursively.		*/
 /*								*/
 /* Return value is 1 if at least one terminal of the node	*/
-/* is already marked as "newnet", indicating that the node	*/
+/* is already marked as PR_SOURCE, indicating that the node	*/
 /* has already been routed.  Otherwise, the return value is	*/
 /* zero of no error occured, and -1 if any point was found to	*/
 /* be unoccupied by any net, which should not happen.		*/
@@ -71,16 +40,16 @@ make_new_pr(x, y, lay)
 /* in the x1, x2, y1, y2 values					*/
 /*--------------------------------------------------------------*/
 
-int set_node_to_net(NODE node, int newnet, POINT *pushlist, SEG bbox)
+int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox)
 {
     int x, y, lay, k;
-    int oldnet;
     int result = 0;
     POINT gpoint;
     DPOINT ntap;
     ROUTE rt;
     SEG seg;
     NODE n2;
+    PROUTE *Pr;
 
     /* Process tap points of the node */
 
@@ -88,19 +57,18 @@ int set_node_to_net(NODE node, int newnet, POINT *pushlist, SEG bbox)
        lay = ntap->layer;
        x = ntap->gridx;
        y = ntap->gridy;
-       oldnet = Obs2[lay][OGRID(x, y, lay)];
-       if (!oldnet) return -1;			// This should not happen.
-       if (oldnet & SRCFLAG) {
+       Pr = &Obs2[lay][OGRID(x, y, lay)];
+       if ((Pr->flags & (newflags | PR_COST)) == PR_COST)
+	  return -1;	// This should not happen.
+
+       if (Pr->flags & PR_SOURCE) {
 	  result = 1;				// Node is already connected!
        }
-       else if (oldnet != newnet) {
-	  if (newnet == SRCNETNUM) {
-	     k = make_new_pr(x, y, lay);
-	     if (k < 0) return k;
-             Obs2[lay][OGRID(x, y, lay)] = k | SRCFLAG;
-	  }
-	  else
-             Obs2[lay][OGRID(x, y, lay)] = newnet;
+       else if ((Pr->prdata.net == node->netnum) && !(Pr->flags & newflags)) {
+
+	  // Do the source and dest nodes need to be marked routable?
+	  Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
+	  Pr->prdata.cost = (newflags == PR_SOURCE) ? 0 : MAXRT;
 
 	  // push this point on the stack to process
 
@@ -138,18 +106,13 @@ int set_node_to_net(NODE node, int newnet, POINT *pushlist, SEG bbox)
 		Nodeloc[lay][OGRID(x, y, lay)] != node)
 	  continue;
 
-       oldnet = Obs2[lay][OGRID(x, y, lay)];
-       if (oldnet & SRCFLAG) {
+       Pr = &Obs2[lay][OGRID(x, y, lay)];
+       if (Pr->flags & PR_SOURCE) {
 	  result = 1;				// Node is already connected!
        }
-       else if (oldnet == node->netnum) {
-	  if (newnet == SRCNETNUM) {
-	     k = make_new_pr(x, y, lay);
-	     if (k < 0) return k;
-             Obs2[lay][OGRID(x, y, lay)] = k | SRCFLAG;
-	  }
-	  else
-             Obs2[lay][OGRID(x, y, lay)] = newnet;
+       else if ((Pr->prdata.net == node->netnum) && !(Pr->flags & newflags)) {
+	  Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
+	  Pr->prdata.cost = (newflags == PR_SOURCE) ? 0 : MAXRT;
 
 	  // push this point on the stack to process
 
@@ -179,16 +142,10 @@ int set_node_to_net(NODE node, int newnet, POINT *pushlist, SEG bbox)
 	     x = seg->x1;
 	     y = seg->y1;
 	     while (1) {
-	        oldnet = Obs2[lay][OGRID(x, y, lay)];
-		if (!oldnet) break;
-		if ((oldnet != newnet) && !(oldnet & SRCFLAG)) {
-		   if (newnet == SRCNETNUM) {
-		      k = make_new_pr(x, y, lay);
-		      if (k < 0) return k;
-		      Obs2[lay][OGRID(x, y, lay)] = k | SRCFLAG;
-		   }
-		   else
-		      Obs2[lay][OGRID(x, y, lay)] = newnet;
+		Pr = &Obs2[lay][OGRID(x, y, lay)];
+		if ((Pr->prdata.net == node->netnum) && !(Pr->flags & newflags)) {
+		   Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
+		   Pr->prdata.cost = (newflags == PR_SOURCE) ? 0 : MAXRT;
 
 		   // push this point on the stack to process
 
@@ -211,7 +168,7 @@ int set_node_to_net(NODE node, int newnet, POINT *pushlist, SEG bbox)
 
 		   n2 = Nodeloc[lay][OGRID(x, y, lay)];
 		   if ((n2 != (NODE)NULL) && (n2 != node)) {
-		      result = set_node_to_net(n2, newnet, pushlist, bbox);
+		      result = set_node_to_net(n2, newflags, pushlist, bbox);
 		   }
 		}
 
@@ -401,12 +358,12 @@ void ripup_net(NET net, u_char restore)
 }
 
 /*--------------------------------------------------------------*/
-/* eval_pt - evaluate cost to get from given pt (x, y, lay) to	*/
-/*	current point (NPX, NPY, CurrentLay)			*/
+/* eval_pt - evaluate cost to get from given point to		*/
+/*	current point.  Current point is passed in "ept", and	*/
+/* 	the direction from the new point to the current point	*/
+/*	is indicated by "flags".				*/
+/*								*/
 /*	ONLY consider the cost of the single step itself.	*/
-/*	"thisindex" is the current index into the Pr array so	*/
-/*	we can add the cost to the cost for the incremental	*/
-/*	step.							*/
 /*								*/
 /*      If "stage" is nonzero, then this is a second stage	*/
 /*	routing, where we should consider other nets to be a	*/
@@ -421,62 +378,69 @@ void ripup_net(NET net, u_char restore)
 /*  SIDE EFFECTS: none (get this right or else)			*/
 /*--------------------------------------------------------------*/
 
-int eval_pt(int x, int y, int lay, int thisindex, u_char stage)
+int eval_pt(GRIDP *ept, u_char flags, u_char stage)
 {
     u_char conflict = (u_char)0;
     int k, j, thiscost = 0;
     NODE node;
     NETLIST nl;
+    PROUTE *Pr, *Pt;
+    GRIDP newpt;
 
-    k = Obs2[lay][OGRID(x, y, lay)];
+    newpt = *ept;
 
-    if (k && !(k & RTFLAG)) {
-       if (k != TARGNETNUM) {
-	  // 2nd stage allows routes to cross existing routes
-	  if (stage && (k < Numnets)) {
-	     if (Nodesav[lay][OGRID(x, y, lay)] != NULL)
-		return 0;			// But cannot route over terminals!
+    switch (flags) {
+       case PR_PRED_N:
+	  newpt.y--;
+	  break;
+       case PR_PRED_S:
+	  newpt.y++;
+	  break;
+       case PR_PRED_E:
+	  newpt.x--;
+	  break;
+       case PR_PRED_W:
+	  newpt.x++;
+	  break;
+       case PR_PRED_U:
+	  newpt.lay--;
+	  break;
+       case PR_PRED_D:
+	  newpt.lay++;
+	  break;
+    }
 
-	     // Is net k in the "noripup" list?  If so, don't route it */
+    Pr = &Obs2[newpt.lay][OGRID(newpt.x, newpt.y, newpt.lay)];
 
-	     for (nl = CurNet->noripup; nl; nl = nl->next) {
-		if (nl->net->netnum == k)
-		   return 0;
-	     }
-	     conflict = (u_char)PR_CONFLICT;	// Save the number of the colliding net
-	     k = 0;
-	     thiscost = ConflictCost;
+    if (!(Pr->flags & PR_COST)) {
+       // 2nd stage allows routes to cross existing routes
+       if (stage && (k < Numnets)) {
+	  if (Nodesav[newpt.lay][OGRID(newpt.x, newpt.y, newpt.lay)] != NULL)
+	     return 0;			// But cannot route over terminals!
+
+	  // Is net k in the "noripup" list?  If so, don't route it */
+
+	  for (nl = CurNet->noripup; nl; nl = nl->next) {
+	     if (nl->net->netnum == k)
+		return 0;
 	  }
-	  else
-             return 0;		// Position is not routeable
+	  conflict = (u_char)PR_CONFLICT;	// Save the number of the colliding net
+	  k = 0;
+	  thiscost = ConflictCost;
        }
        else
-          k = RTFLAG;		// Use Pr[0] to hold target cost info
+          return 0;		// Position is not routeable
     }
 
-    if (!k) {
-       /* Not visited before, so create new entry */
-       k = make_new_pr(x, y, lay);
-       if (k < 0) return k;
-       Pr[k].flags = conflict;
-       Pr[k].cost = MAXRT;
-
-       if (Verbose > 0) {
-	  fprintf(stdout, "PRind = %d at (%d %d %d)\n", k, x, y, lay);
-       }
-
-       k |= RTFLAG;
-       Obs2[lay][OGRID(x, y, lay)] = k;
-    }
-
-    // Compute the cost to step from (NPX, NPY, CurrentLay) to (x, y, lay)
+    // Compute the cost to step from the current point to the new point.
     // "BlockCost" is used if the node has only one point to connect to,
     // so that routing over it could block it entirely.
 
-    if (lay > 0) {
-	if ((node = Nodeloc[lay - 1][OGRID(x, y, lay - 1)]) != (NODE)NULL) {
-	    j = Obs2[lay - 1][OGRID(x, y, lay - 1)];
-	    if ((j != TARGNETNUM) && !(j & SRCFLAG)) {
+    if (newpt.lay > 0) {
+	if ((node = Nodeloc[newpt.lay - 1][OGRID(newpt.x, newpt.y, newpt.lay - 1)])
+			!= (NODE)NULL) {
+	    Pt = &Obs2[newpt.lay - 1][OGRID(newpt.x, newpt.y, newpt.lay - 1)];
+	    if (!(Pt->flags & PR_TARGET) && !(Pt->flags & PR_SOURCE)) {
 		if (node->taps && (node->taps->next == NULL))
 		   thiscost += BlockCost;	// Cost to block out a tap
 		else
@@ -484,10 +448,11 @@ int eval_pt(int x, int y, int lay, int thisindex, u_char stage)
 	    }
 	}
     }
-    if (lay < Num_layers - 1) {
-	if ((node = Nodeloc[lay + 1][OGRID(x, y, lay + 1)]) != (NODE)NULL) {
-	    j = Obs2[lay + 1][OGRID(x, y, lay + 1)];
-	    if ((j != TARGNETNUM) && !(j & SRCFLAG)) {
+    if (newpt.lay < Num_layers - 1) {
+	if ((node = Nodeloc[newpt.lay + 1][OGRID(newpt.x, newpt.y, newpt.lay + 1)])
+			!= (NODE)NULL) {
+	    Pt = &Obs2[newpt.lay + 1][OGRID(newpt.x, newpt.y, newpt.lay + 1)];
+	    if (!(Pt->flags & PR_TARGET) && !(Pt->flags & PR_SOURCE)) {
 		if (node->taps && (node->taps->next == NULL))
 		   thiscost += BlockCost;	// Cost to block out a tap
 		else
@@ -495,35 +460,36 @@ int eval_pt(int x, int y, int lay, int thisindex, u_char stage)
 	    }
 	}
     }
-    if (CurrentLay != lay) thiscost += ViaCost;
-    if (NPX != x) thiscost += (Vert[lay] * JogCost + (1 - Vert[lay]) * SegCost);
-    if (NPY != y) thiscost += (Vert[lay] * SegCost + (1 - Vert[lay]) * JogCost);
+    if (ept->lay != newpt.lay) thiscost += ViaCost;
+    if (ept->x != newpt.x) thiscost += (Vert[newpt.lay] * JogCost +
+			(1 - Vert[newpt.lay]) * SegCost);
+    if (ept->y != newpt.y) thiscost += (Vert[newpt.lay] * SegCost +
+			(1 - Vert[newpt.lay]) * JogCost);
 
     // Add the cost to the cost of the original position
-    if (thisindex) {	/* == 0 only for source node */
-       thiscost += Pr[thisindex].cost;
-    }
+    thiscost += ept->cost;
    
     // Replace node information if cost is minimum
 
-    k &= ~RTFLAG;
-
-    if (Pr[k].flags & PR_CONFLICT)
+    if (Pr->flags & PR_CONFLICT)
        thiscost += ConflictCost;	// For 2nd stage routes
 
-    if (thiscost < Pr[k].cost) {
-       Pr[k].pred = thisindex;
-       Pr[k].cost = thiscost;
-       Pr[k].flags &= ~PR_PROCESSED;	// Need to reprocess this node
+    if (thiscost < Pr->prdata.cost) {
+       Pr->flags &= ~PR_PRED_DMASK;
+       Pr->flags |= flags;
+       Pr->prdata.cost = thiscost;
+       Pr->flags &= ~PR_PROCESSED;	// Need to reprocess this node
 
        if (Verbose > 0) {
-	  fprintf(stdout, "New cost %d at (%d %d %d)\n", thiscost, x, y, lay);
+	  fprintf(stdout, "New cost %d at (%d %d %d)\n", thiscost,
+		newpt.x, newpt.y, newpt.lay);
        }
        return 1;
     }
     return 0;	// New position did not get a lower cost
 
 } /* eval_pt() */
+
 
 /*--------------------------------------------------------------*/
 /* commit_proute - turn the potential route into an actual	*/
@@ -537,18 +503,19 @@ int eval_pt(int x, int y, int lay, int thisindex, u_char stage)
 /*  SIDE EFFECTS: Obs update, RT llseg added			*/
 /*--------------------------------------------------------------*/
 
-int commit_proute(ROUTE rt, u_char stage)
+int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 {
    SEG  seg, lseg;
    int  i, j, k;
    int  x, y;
+   int  dx, dy, dl;
    NODE n1;
    u_int netnum, dir1, dir2;
    u_char first = (u_char)1;
-   int  dist, max, xn, yn, ll, dx, dy;
-   int  layer, lay;
-   int  index, prev, next;
+   u_char dmask;
+   PROUTE *Pr;
    DPOINT dp;
+   POINT newlr, newlr2, lrtop, lrend, lrnext, lrcur, lrprev;
 
    fflush(stdout);
    fprintf(stderr, "\nCommit: TotalRoutes = %d\n", TotalRoutes);
@@ -556,76 +523,112 @@ int commit_proute(ROUTE rt, u_char stage)
    n1 = rt->node;
    netnum = rt->netnum;
 
-   xn = NPX; yn = NPY; ll = CurrentLay;
-   index = Obs2[ll][OGRID(xn, yn, ll)];
-
-   if (!(index & RTFLAG)) {
-   fprintf(stderr, "commit_proute(): impossible - no prouter here!\n");
-     print_obs2("obs2.failed");
-     exit(-2);
+   Pr = &Obs2[ept->lay][OGRID(ept->x, ept->y, ept->lay)];
+   if (!(Pr->flags & PR_COST)) {
+      fprintf(stderr, "commit_proute(): impossible - terminal is not routable!\n");
+      return FALSE;
    }
 
-   if (Debug) {
-      print_obs("obs.commit");
-      print_obs2("obs2.commit");
-   }
+   // Generate an indexed route, recording the series of predecessors and their
+   // positions.
 
-   index &= ~RTFLAG;
-   prev = Pr[index].pred;
-   lseg = (SEG)NULL;
+   lrtop = (POINT)malloc(sizeof(struct point_));
+   lrtop->x1 = ept->x;
+   lrtop->y1 = ept->y;
+   lrtop->layer = ept->lay;
+   lrtop->next = NULL;
+   lrend = lrtop;
+
+   while (1) {
+
+      Pr = &Obs2[lrend->layer][OGRID(lrend->x1, lrend->y1, lrend->layer)];
+      dmask = Pr->flags & PR_PRED_DMASK;
+      if (dmask == PR_PRED_NONE) break;
+
+      newlr = (POINT)malloc(sizeof(struct point_));
+      newlr->x1 = lrend->x1;
+      newlr->y1 = lrend->y1;
+      newlr->layer = lrend->layer;
+      lrend->next = newlr;
+      newlr->next = NULL;
+
+      switch (dmask) {
+         case PR_PRED_N:
+	    (newlr->y1)++;
+	    break;
+         case PR_PRED_S:
+	    (newlr->y1)--;
+	    break;
+         case PR_PRED_E:
+	    (newlr->x1)++;
+	    break;
+         case PR_PRED_W:
+	    (newlr->x1)--;
+	    break;
+         case PR_PRED_U:
+	    (newlr->layer)++;
+	    break;
+         case PR_PRED_D:
+	    (newlr->layer)--;
+	    break;
+      }
+      lrend = newlr;
+   }
+   lrend = lrtop;
 
    // TEST:  Walk through the solution, and look for stacked vias.  When
    // found, look for an alternative path that avoids the stack.
 
    if (StackedContacts < (Num_layers - 1)) {
-      int tind, ppre, stacks = 1, stackheight, a, b;
-      int cx, cy, cl, mincost;
-      int dx, dy, dl, minx, miny, ci, ci2;
+      POINT lrppre;
+      POINT a, b;
+      PROUTE *pri, *pri2;
+      int stacks = 1, stackheight;
+      int cx, cy, cl;
+      int mincost, minx, miny, ci, ci2;
 
-      // Fill in information for final route point
-      Pr[index].x1 = xn;
-      Pr[index].y1 = yn;
-      Pr[index].layer = ll;
-
-      while (stacks != 0) {
+      while (stacks != 0) {	// Keep doing until all illegal stacks are gone
 	 stacks = 0;
-	 tind = index;
-	 prev = Pr[tind].pred;
-	 while (prev != 0) {
-	    ppre = Pr[prev].pred;
-	    if (ppre == 0) break;
+	 lrcur = lrend;
+	 lrprev = lrend->next;
+
+	 while (lrprev != NULL) {
+	    lrppre = lrprev->next;
+	    if (lrppre == NULL) break;
 	    stackheight = 0;
-	    a = tind;
-	    b = prev;
-	    while (Pr[a].layer != Pr[b].layer) {
+	    a = lrcur;
+	    b = lrprev;
+	    while (a->layer != b->layer) {
 	       stackheight++;
 	       a = b;
-	       b = Pr[a].pred;
-	       if (b == 0) break;
+	       b = a->next;
+	       if (b == NULL) break;
 	    }
-	    if (stackheight > StackedContacts) {
+	    if (stackheight > StackedContacts) {	// Illegal stack found
 	       stacks++;
 
 	       // Try to move the second contact in the path
-	       cx = Pr[prev].x1;
-	       cy = Pr[prev].y1;
-	       cl = Pr[prev].layer;
+	       cx = lrprev->x1;
+	       cy = lrprev->y1;
+	       cl = lrprev->layer;
 	       mincost = MAXRT;
-	       dl = Pr[ppre].layer;
+	       dl = lrppre->layer;
 
 	       // Check all four positions around the contact for the
 	       // lowest cost, and make sure the position below that
 	       // is available.
 	       dx = cx + 1;	// Check to the right
-	       ci = Obs2[cl][OGRID(dx, cy, cl)];
-	       if (ci & RTFLAG) {
-		  ci &= ~RTFLAG;
-		  if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	             ci2 = Obs2[dl][OGRID(dx, cy, dl)];
-		     if (ci2 & RTFLAG) {
-			ci2 &= ~RTFLAG;
-		        if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		           mincost = Pr[ci].cost;
+	       pri = &Obs2[cl][OGRID(dx, cy, cl)];
+	       if (pri->flags & PR_COST) {
+		  pri->flags &= ~PR_COST;
+		  if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+				pri->prdata.cost < mincost) {
+	             pri2 = &Obs2[dl][OGRID(dx, cy, dl)];
+		     if (pri2->flags & PR_COST) {
+			pri2->flags &= ~PR_COST;
+		        if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+				pri2->prdata.cost < MAXRT) {
+		           mincost = pri->prdata.cost;
 		           minx = dx;
 		           miny = cy;
 			}
@@ -633,15 +636,17 @@ int commit_proute(ROUTE rt, u_char stage)
 		  }
 	       }
 	       dx = cx - 1;	// Check to the left
-	       ci = Obs2[cl][OGRID(dx, cy, cl)];
-	       if (ci & RTFLAG) {
-		  ci &= ~RTFLAG;
-		  if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	             ci2 = Obs2[dl][OGRID(dx, cy, dl)];
-		     if (ci2 & RTFLAG) {
-			ci2 &= ~RTFLAG;
-		        if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		           mincost = Pr[ci].cost;
+	       pri = &Obs2[cl][OGRID(dx, cy, cl)];
+	       if (pri->flags & PR_COST) {
+		  pri->flags &= ~PR_COST;
+		  if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+				pri->prdata.cost < mincost) {
+	             pri2 = &Obs2[dl][OGRID(dx, cy, dl)];
+		     if (pri2->flags & PR_COST) {
+			pri2->flags &= ~PR_COST;
+		        if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+				pri2->prdata.cost < MAXRT) {
+		           mincost = pri->prdata.cost;
 		           minx = dx;
 		           miny = cy;
 			}
@@ -650,15 +655,17 @@ int commit_proute(ROUTE rt, u_char stage)
 	       }
 
 	       dy = cy + 1;	// Check up
-	       ci = Obs2[cl][OGRID(cx, dy, cl)];
-	       if (ci & RTFLAG) {
-		  ci &= ~RTFLAG;
-		  if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	             ci2 = Obs2[dl][OGRID(cx, dy, dl)];
-		     if (ci2 & RTFLAG) {
-			ci2 &= ~RTFLAG;
-		        if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		           mincost = Pr[ci].cost;
+	       pri = &Obs2[cl][OGRID(cx, dy, cl)];
+	       if (pri->flags & PR_COST) {
+		  pri->flags &= ~PR_COST;
+		  if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+				pri->prdata.cost < mincost) {
+	             pri2 = &Obs2[dl][OGRID(cx, dy, dl)];
+		     if (pri2->flags & PR_COST) {
+			pri2->flags &= ~PR_COST;
+		        if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+				pri2->prdata.cost < MAXRT) {
+		           mincost = pri->prdata.cost;
 		           minx = cx;
 		           miny = dy;
 			}
@@ -667,15 +674,17 @@ int commit_proute(ROUTE rt, u_char stage)
 	       }
 
 	       dy = cy - 1;	// Check down
-	       ci = Obs2[cl][OGRID(cx, dy, cl)];
-	       if (ci & RTFLAG) {
-		  ci &= ~RTFLAG;
-		  if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	             ci2 = Obs2[dl][OGRID(cx, dy, dl)];
-		     if (ci2 & RTFLAG) {
-		        ci2 &= ~RTFLAG;
-		        if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		           mincost = Pr[ci].cost;
+	       pri = &Obs2[cl][OGRID(cx, dy, cl)];
+	       if (pri->flags & PR_COST) {
+		  pri->flags &= ~PR_COST;
+		  if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+				pri->prdata.cost < mincost) {
+	             pri2 = &Obs2[dl][OGRID(cx, dy, dl)];
+		     if (pri2->flags & PR_COST) {
+		        pri2->flags &= ~PR_COST;
+		        if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+				pri2->prdata.cost < MAXRT) {
+		           mincost = pri->prdata.cost;
 		           minx = cx;
 		           miny = dy;
 			}
@@ -683,36 +692,67 @@ int commit_proute(ROUTE rt, u_char stage)
 		  }
 	       }
 
-	       // Was there an available route?  If so, modify "pred"
+	       // Was there an available route?  If so, modify
 	       // records to route through this alternate path.  If not,
 	       // then try to move the first contact instead.
 
 	       if (mincost < MAXRT) {
-	          ci = Obs2[cl][OGRID(minx, miny, cl)] & ~RTFLAG;
-		  Pr[prev].pred = ci;
-	          ci2 = Obs2[dl][OGRID(minx, miny, dl)] & ~RTFLAG;
-		  Pr[ci].pred = ci2;
-		  if (Pr[ppre].pred != ci2) {
-		     Pr[ci2].pred = ppre;
+	          pri = &Obs2[cl][OGRID(minx, miny, cl)];
+
+		  newlr = (POINT)malloc(sizeof(struct point_));
+		  newlr->x1 = minx;
+		  newlr->y1 = miny;
+		  newlr->layer = cl;
+
+	          pri2 = &Obs2[dl][OGRID(minx, miny, dl)];
+
+		  newlr2 = (POINT)malloc(sizeof(struct point_));
+		  newlr2->x1 = minx;
+		  newlr2->y1 = miny;
+		  newlr2->layer = dl;
+
+		  lrprev->next = newlr;
+		  newlr->next = newlr2;
+
+		  // Check if point at pri2 is equal to position of
+		  // lrppre->next.  If so, bypass lrppre.
+
+		  if (lrnext = lrppre->next) {
+		     if (lrnext->x1 == minx && lrnext->y1 == miny &&
+				lrnext->layer == dl) {
+			newlr->next = lrnext;
+			free(lrppre);
+			free(newlr2);
+		     }
+		     else
+		        newlr2->next = lrppre;
 		  }
+		  else
+		     newlr2->next = lrppre;
 	       }
 	       else {
-	          cx = Pr[tind].x1;
-	          cy = Pr[tind].y1;
-	          cl = Pr[tind].layer;
+
+		  // If we couldn't offset lrprev position, then try
+		  // offsetting lrcur.
+
+	          cx = lrcur->x1;
+	          cy = lrcur->y1;
+	          cl = lrcur->layer;
 	          mincost = MAXRT;
-	          dl = Pr[prev].layer;
+	          dl = lrprev->layer;
 
 	          dx = cx + 1;	// Check to the right
-	          ci = Obs2[cl][OGRID(dx, cy, cl)];
-		  if (ci & RTFLAG) {
-		     ci &= ~RTFLAG;
-		     if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	                ci2 = Obs2[dl][OGRID(dx, cy, dl)];
-			if (ci2 & RTFLAG) {
-			   ci2 &= ~RTFLAG;
-		           if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		              mincost = Pr[ci].cost;
+	          pri = &Obs2[cl][OGRID(dx, cy, cl)];
+		  if (pri->flags & PR_COST) {
+		     pri->flags &= ~PR_COST;
+		     if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+				pri->prdata.cost < mincost) {
+	                pri2 = &Obs2[dl][OGRID(dx, cy, dl)];
+			if (pri2->flags & PR_COST) {
+			   pri2->flags &= ~PR_COST;
+		           if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+					pri2->prdata.cost < MAXRT) {
+		              mincost = pri->prdata.cost;
 		              minx = dx;
 		              miny = cy;
 			   }
@@ -721,15 +761,17 @@ int commit_proute(ROUTE rt, u_char stage)
 	          }
 
 	          dx = cx - 1;	// Check to the left
-	          ci = Obs2[cl][OGRID(dx, cy, cl)];
-		  if (ci & RTFLAG) {
-		     ci &= ~RTFLAG;
-		     if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	                ci2 = Obs2[dl][OGRID(dx, cy, dl)];
-			if (ci2 & RTFLAG) {
-			   ci2 &= ~RTFLAG;
-		           if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		              mincost = Pr[ci].cost;
+	          pri = &Obs2[cl][OGRID(dx, cy, cl)];
+		  if (pri->flags & PR_COST) {
+		     pri->flags &= ~PR_COST;
+		     if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+				pri->prdata.cost < mincost) {
+	                pri2 = &Obs2[dl][OGRID(dx, cy, dl)];
+			if (pri2->flags & PR_COST) {
+			   pri2->flags &= ~PR_COST;
+		           if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+					pri2->prdata.cost < MAXRT) {
+		              mincost = pri->prdata.cost;
 		              minx = dx;
 		              miny = cy;
 			   }
@@ -738,15 +780,17 @@ int commit_proute(ROUTE rt, u_char stage)
 	          }
 
 	          dy = cy + 1;	// Check up
-	          ci = Obs2[cl][OGRID(cx, dy, cl)];
-		  if (ci & RTFLAG) {
-		     ci &= ~RTFLAG;
-		     if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	                ci2 = Obs2[dl][OGRID(cx, dy, dl)];
-			if (ci2 & RTFLAG) {
-			   ci2 &= ~RTFLAG;
-		           if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		              mincost = Pr[ci].cost;
+	          pri = &Obs2[cl][OGRID(cx, dy, cl)];
+		  if (pri->flags & PR_COST) {
+		     pri->flags &= ~PR_COST;
+		     if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+				pri->prdata.cost < mincost) {
+	                pri2 = &Obs2[dl][OGRID(cx, dy, dl)];
+			if (pri2->flags & PR_COST) {
+			   pri2->flags &= ~PR_COST;
+		           if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+					pri2->prdata.cost < MAXRT) {
+		              mincost = pri->prdata.cost;
 		              minx = cx;
 		              miny = dy;
 			   }
@@ -755,15 +799,17 @@ int commit_proute(ROUTE rt, u_char stage)
 	          }
 
 	          dy = cy - 1;	// Check down
-	          ci = Obs2[cl][OGRID(cx, dy, cl)];
-		  if (ci & RTFLAG) {
-		     ci &= ~RTFLAG;
-		     if (Pr[ci].pred != 0 && Pr[ci].cost < mincost) {
-	                ci2 = Obs2[dl][OGRID(cx, dy, dl)];
-			if (ci2 & RTFLAG) {
-			   ci2 &= ~RTFLAG;
-		           if (Pr[ci2].pred != 0 && Pr[ci2].cost < MAXRT) {
-		              mincost = Pr[ci].cost;
+	          pri = &Obs2[cl][OGRID(cx, dy, cl)];
+		  if (pri->flags & PR_COST) {
+		     pri->flags &= ~PR_COST;
+		     if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+				pri->prdata.cost < mincost) {
+	                pri2 = &Obs2[dl][OGRID(cx, dy, dl)];
+			if (pri2->flags & PR_COST) {
+			   pri2->flags &= ~PR_COST;
+		           if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+					pri2->prdata.cost < MAXRT) {
+		              mincost = pri->prdata.cost;
 		              minx = cx;
 		              miny = dy;
 			   }
@@ -772,14 +818,35 @@ int commit_proute(ROUTE rt, u_char stage)
 	          }
 
 		  if (mincost < MAXRT) {
-	             ci = Obs2[cl][OGRID(minx, miny, cl)] & ~RTFLAG;
-		     Pr[tind].pred = ci;
-	             ci2 = Obs2[dl][OGRID(minx, miny, dl)] & ~RTFLAG;
-		     Pr[ci].pred = ci2;
-		     Pr[ci2].pred = prev;
-		     if (Pr[prev].pred != ci2) {
-		        Pr[ci2].pred = prev;
+	             pri = &Obs2[cl][OGRID(minx, miny, cl)];
+
+		     newlr = (POINT)malloc(sizeof(struct point_));
+		     newlr->x1 = minx;
+		     newlr->y1 = miny;
+		     newlr->layer = cl;
+
+	             pri2 = &Obs2[dl][OGRID(minx, miny, dl)];
+
+		     newlr2 = (POINT)malloc(sizeof(struct point_));
+		     newlr2->x1 = minx;
+		     newlr2->y1 = miny;
+		     newlr2->layer = dl;
+
+		     lrcur->next = newlr;
+		     newlr->next = newlr2;
+
+		     // Check if point at pri2 is equal to position of
+		     // lrprev->next.  If so, bypass lrprev.
+
+		     if (lrppre->x1 == minx && lrppre->y1 == miny &&
+				lrppre->layer == dl) {
+			newlr->next = lrppre;
+			free(lrprev);
+			free(newlr2);
+			lrprev = lrcur;
 		     }
+		     else
+			newlr2->next = lrprev;
 		  }
 		  else {
 		     printf("Warning:  Failed to remove stacked via!\n");
@@ -787,30 +854,30 @@ int commit_proute(ROUTE rt, u_char stage)
 		  }
 	       }
 	    }
-	    tind = prev;
-	    prev = ppre;
+	    lrcur = lrprev;
+	    lrprev = lrppre;
 	 }
       }
    }
  
-   index &= ~RTFLAG;
-   prev = Pr[index].pred;
+   lrend = lrtop;
+   lrcur = lrtop;
+   lrprev = lrcur->next;
    lseg = (SEG)NULL;
 
    while (1) {
-      dist = 1;
       seg = (SEG)malloc(sizeof(struct seg_));
       seg->next = NULL;
 
-      seg->segtype = (ll == Pr[prev].layer) ? ST_WIRE : ST_VIA;
+      seg->segtype = (lrcur->layer == lrprev->layer) ? ST_WIRE : ST_VIA;
 
-      seg->x1 = xn;
-      seg->y1 = yn;
+      seg->x1 = lrcur->x1;
+      seg->y1 = lrcur->y1;
 
-      seg->layer = MIN(ll, Pr[prev].layer);
+      seg->layer = MIN(lrcur->layer, lrprev->layer);
 
-      seg->x2 = Pr[prev].x1;
-      seg->y2 = Pr[prev].y1;
+      seg->x2 = lrprev->x1;
+      seg->y2 = lrprev->y1;
 
       dx = seg->x2 - seg->x1;
       dy = seg->y2 - seg->y1;
@@ -828,16 +895,15 @@ int commit_proute(ROUTE rt, u_char stage)
       // no assumptions about stacked vias.
 
       if (seg->segtype == ST_WIRE) {
-	 while ((next = Pr[prev].pred) != 0) {
-	    next = Pr[prev].pred;
-	    if (((Pr[next].x1 - Pr[prev].x1) == dx) &&
-			((Pr[next].y1 - Pr[prev].y1) == dy) &&
-			(Pr[next].layer == Pr[prev].layer)) {
-	       index = prev;
-	       prev = next;
-	       seg->x2 = Pr[prev].x1;
-	       seg->y2 = Pr[prev].y1;
-	       dist++;
+	 while ((lrnext = lrprev->next) != NULL) {
+	    lrnext = lrprev->next;
+	    if (((lrnext->x1 - lrprev->x1) == dx) &&
+			((lrnext->y1 - lrprev->y1) == dy) &&
+			(lrnext->layer == lrprev->layer)) {
+	       lrcur = lrprev;
+	       lrprev = lrnext;
+	       seg->x2 = lrprev->x1;
+	       seg->y2 = lrprev->y1;
 	    }
 	    else
 	       break;
@@ -845,8 +911,8 @@ int commit_proute(ROUTE rt, u_char stage)
       }
 
       if (Verbose > 0) {
-         printf( "commit: index = %d, net = %d, predecessor = %d\n",
-		index, netnum, prev);
+         printf( "commit: index = %d, net = %d\n",
+		Pr->prdata.net, netnum);
 
 	 if (seg->segtype == ST_WIRE) {
             printf( "commit: wire layer %d, (%d,%d) to (%d,%d)\n",
@@ -865,28 +931,28 @@ int commit_proute(ROUTE rt, u_char stage)
 
       if (stage == (u_char)0) {
          if (seg->segtype == ST_VIA) {
-	    Obs[seg->layer][OGRID(xn, yn, seg->layer)] = netnum;
-	    Obs[seg->layer + 1][OGRID(xn, yn, seg->layer + 1)] = netnum;
+	    Obs[seg->layer][OGRID(lrcur->x1, lrcur->y1, seg->layer)] = netnum;
+	    Obs[seg->layer + 1][OGRID(lrcur->x1, lrcur->y1, seg->layer + 1)] = netnum;
          }
          else if (seg->segtype == ST_WIRE) {
 	    if (seg->x1 < seg->x2) {
 	       for (i = seg->x1; i <= seg->x2; i++) {
-	          Obs[ll][OGRID(i, yn, ll)] = netnum;
+	          Obs[lrcur->layer][OGRID(i, lrcur->y1, lrcur->layer)] = netnum;
 	       }
 	    }
 	    if (seg->x1 > seg->x2) {
 	       for (i = seg->x2; i <= seg->x1; i++) {
-	          Obs[ll][OGRID(i, yn, ll)] = netnum;
+	          Obs[lrcur->layer][OGRID(i, lrcur->y1, lrcur->layer)] = netnum;
 	       }
 	    }
 	    if (seg->y1 < seg->y2) {
 	       for (i = seg->y1; i <= seg->y2; i++) {
-	          Obs[ll][OGRID(xn, i, ll)] = netnum;
+	          Obs[lrcur->layer][OGRID(lrcur->x1, i, lrcur->layer)] = netnum;
 	       }
 	    }
 	    if (seg->y1 > seg->y2) {
 	       for (i = seg->y2; i <= seg->y1; i++) {
-	          Obs[ll][OGRID(xn, i, ll)] = netnum;
+	          Obs[lrcur->layer][OGRID(lrcur->x1, i, lrcur->layer)] = netnum;
 	       }
 	    }
          }
@@ -896,41 +962,42 @@ int commit_proute(ROUTE rt, u_char stage)
          }
       }
 
-      xn = seg->x2; yn = seg->y2; ll = Pr[prev].layer;
+      lrend = lrcur;		// Save the last route position
+      lrend->x1 = lrcur->x1;
+      lrend->y1 = lrcur->y1;
+      lrend->layer = lrcur->layer;
 
-      index = prev;
-      prev = Pr[index].pred;
-
-      // Problem:  index should always be zero at source, but it's not.
-      // So we check here if the predecessor position is equal to the source.
+      lrcur = lrprev;		// Move to the next route position
+      lrcur->x1 = seg->x2;
+      lrcur->y1 = seg->y2;
+      lrprev = lrcur->next;
 
       dp = n1->taps;
       if (dp == NULL) dp = n1->extend;
 
-      if ((index == 0) || (prev == 0) ||
-		((xn == dp->gridx) && (yn == dp->gridy) && (ll == dp->layer))) { 
+      if (lrprev == NULL) {
 
          if (dir2 && (stage == (u_char)0)) {
 	    Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] |= dir2;
          }
-	 if (Debug) print_obs("obs.f1");
 
-	 // Before returning, set NPX, NPY, and CurrentLay to the endpoint
+	 // Before returning, set *ept to the endpoint
 	 // position.  This is for diagnostic purposes only.
-	 NPX = Pr[index].x1;
-	 NPY = Pr[index].y1; 
-	 CurrentLay = Pr[index].layer;
+	 ept->x = lrend->x1;
+	 ept->y = lrend->y1;
+	 ept->lay = lrend->layer;
 
+	 // Clean up allocated memory for the route. . .
+	 while (lrtop != NULL) {
+	    lrnext = lrtop->next;
+	    free(lrtop);
+	    lrtop = lrnext;
+	 }
 	 return TRUE;
       }
    }
 
    // This block is not reachable
-
-   if (Debug) {
-      print_obs( "obs.f2" );
-      print_obs2( "obs2.f2" );
-   }
    return FALSE;
 
 } /* commit_proute() */
