@@ -646,13 +646,6 @@ DefReadNets(FILE *f, char *sname, float oscale, char special, int total)
     // Set the number of nodes per net for each node on the net
 
     if (special == FALSE) {
-	for (node = Nlnodes; node; node = node->next) {
-	    i = 0;
-	    for (node2 = Nlnodes; node2; node2 = node2->next) {
-		if (node->netname == node2->netname) i++;
-	    }
-	    node->numnodes = i;
-	}
 
 	// Fill in the netnodes list for each net, needed for checking
 	// for isolated routed groups within a net.
@@ -667,6 +660,9 @@ DefReadNets(FILE *f, char *sname, float oscale, char special, int total)
 		    net->numnodes++;
 		}
 	    }
+	    for (node = Nlnodes; node; node = node->next)
+		if (node->netname == net->netname)
+		   node->numnodes = net->numnodes;
 	}
     }
 

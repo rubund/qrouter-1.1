@@ -38,12 +38,20 @@ extern int TotalRoutes;
 /*								*/
 /* If "bbox" is non-null, record the grid extents of the node	*/
 /* in the x1, x2, y1, y2 values					*/
+/*								*/
+/* If "stage" is 1 (rip-up and reroute), then don't let an	*/
+/* existing route prevent us from adding terminals.		*/
+/*								*/
+/* If we completely fail to find a tap point under any		*/
+/* condition, then return -2.  This is a fatal error;  there	*/
+/* will be no way to route the net.				*/
 /*--------------------------------------------------------------*/
 
-int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox)
+int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char stage)
 {
     int x, y, lay, k;
     int result = 0;
+    u_char found_one = (u_char)0;
     POINT gpoint;
     DPOINT ntap;
     ROUTE rt;
@@ -64,10 +72,17 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox)
        if (Pr->flags & PR_SOURCE) {
 	  result = 1;				// Node is already connected!
        }
-       else if ((Pr->prdata.net == node->netnum) && !(Pr->flags & newflags)) {
+       else if (((Pr->prdata.net == node->netnum) || (stage == (u_char)2)) &&
+			!(Pr->flags & newflags)) {
 
 	  // Do the source and dest nodes need to be marked routable?
 	  Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
+
+	  // If we got here, we're on the rip-up stage, and there
+	  // is an existing route completely blocking the terminal.
+	  // So we will route over it and flag it as a collision.
+	  if (Pr->prdata.net != node->netnum) Pr->flags |= PR_CONFLICT;
+
 	  Pr->prdata.cost = (newflags == PR_SOURCE) ? 0 : MAXRT;
 
 	  // push this point on the stack to process
@@ -80,6 +95,7 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox)
 	     gpoint->next = *pushlist;
 	     *pushlist = gpoint;
 	  }
+	  found_one = (u_char)1;
 
 	  // record extents
 	  if (bbox) {
@@ -110,8 +126,10 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox)
        if (Pr->flags & PR_SOURCE) {
 	  result = 1;				// Node is already connected!
        }
-       else if ((Pr->prdata.net == node->netnum) && !(Pr->flags & newflags)) {
+       else if (((Pr->prdata.net == node->netnum) || (stage == (u_char)2)) &&
+			!(Pr->flags & newflags)) {
 	  Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
+	  if (Pr->prdata.net != node->netnum) Pr->flags |= PR_CONFLICT;
 	  Pr->prdata.cost = (newflags == PR_SOURCE) ? 0 : MAXRT;
 
 	  // push this point on the stack to process
@@ -124,6 +142,7 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox)
 	     gpoint->next = *pushlist;
 	     *pushlist = gpoint;
 	  }
+	  found_one = (u_char)1;
 
 	  // record extents
 	  if (bbox) {
@@ -135,6 +154,9 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox)
        }
     }
 
+    // That which is already routed (routes should be attached to source
+    // nodes) is routable by definition. . .
+
     for (rt = node->routes; rt; rt = rt->next) {
        if (rt->segments && rt->node) {
 	  for (seg = rt->segments; seg; seg = seg->next) {
@@ -143,33 +165,37 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox)
 	     y = seg->y1;
 	     while (1) {
 		Pr = &Obs2[lay][OGRID(x, y, lay)];
-		if ((Pr->prdata.net == node->netnum) && !(Pr->flags & newflags)) {
-		   Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
-		   Pr->prdata.cost = (newflags == PR_SOURCE) ? 0 : MAXRT;
+		Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
+		// Conflicts should not happen (check for this?)
+		// if (Pr->prdata.net != node->netnum) Pr->flags |= PR_CONFLICT;
+		Pr->prdata.cost = (newflags == PR_SOURCE) ? 0 : MAXRT;
 
-		   // push this point on the stack to process
+		// push this point on the stack to process
 
-		   if (pushlist != NULL) {
-	  	      gpoint = (POINT)malloc(sizeof(struct point_));
-	  	      gpoint->x1 = x;
-	  	      gpoint->y1 = y;
-	  	      gpoint->layer = lay;
-	  	      gpoint->next = *pushlist;
-	 	      *pushlist = gpoint;
-		   }
+		if (pushlist != NULL) {
+	  	   gpoint = (POINT)malloc(sizeof(struct point_));
+	  	   gpoint->x1 = x;
+	  	   gpoint->y1 = y;
+	  	   gpoint->layer = lay;
+	  	   gpoint->next = *pushlist;
+	 	   *pushlist = gpoint;
+		}
+		found_one = (u_char)1;
 
-		   // record extents
-		   if (bbox) {
-		      if (x < bbox->x1) bbox->x1 = x;
-		      if (x > bbox->x2) bbox->x2 = x;
-		      if (y < bbox->y1) bbox->y1 = y;
-		      if (y > bbox->y2) bbox->y2 = y;
-		   }
+		// record extents
+		if (bbox) {
+		   if (x < bbox->x1) bbox->x1 = x;
+		   if (x > bbox->x2) bbox->x2 = x;
+		   if (y < bbox->y1) bbox->y1 = y;
+		   if (y > bbox->y2) bbox->y2 = y;
+		}
 
-		   n2 = Nodeloc[lay][OGRID(x, y, lay)];
-		   if ((n2 != (NODE)NULL) && (n2 != node)) {
-		      result = set_node_to_net(n2, newflags, pushlist, bbox);
-		   }
+		// If we found another node connected to the route,
+		// then process it, too.
+
+		n2 = Nodeloc[lay][OGRID(x, y, lay)];
+		if ((n2 != (NODE)NULL) && (n2 != node)) {
+		   result = set_node_to_net(n2, newflags, pushlist, bbox, stage);
 		}
 
 		// Move to next grid position in segment
@@ -181,6 +207,19 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox)
 	     }
 	  }
        }
+    }
+
+    // In the case that no valid tap points were found,	if
+    // we're on the rip-up and reroute section, try again,
+    // ignoring existing routes that are in the way of the
+    // tap point.  If that fails, then we are in trouble;
+    // this point is apparently not routable.
+
+    if ((result == 0) && (found_one == (u_char)0)) {
+       if (stage == (u_char)1)
+          return set_node_to_net(node, newflags, pushlist, bbox, (u_char)2);
+       else
+	  return -2;
     }
     return result;
 }

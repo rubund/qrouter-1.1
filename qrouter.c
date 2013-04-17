@@ -297,15 +297,32 @@ main(int argc, char *argv[])
       fprintf(stdout, "No failed routes!\n");
    else {
       if (FailedNets != (NETLIST)NULL) {
+	 /* This should not happen;  should be cleaned up by dosecondstage() */
          fprintf(stdout, "Failed net routes: %d\n", FailedNets->idx);
          fprintf(stdout, "See file \"failed\" for list of failing nets.\n");
       }
       if (Abandoned != (NETLIST)NULL) {
          fprintf(stdout, "Abandoned net routes: %d\n", Abandoned->idx);
          fprintf(stdout, "See file \"failed\" for list of abandoned nets.\n");
+
+	 if (Failfptr) fprintf(Failfptr,
+			"\n------------------------------------------\n");
+	 if (!Failfptr) openFailFile();
+
+	 while (Abandoned) {
+	    NETLIST nl;
+	    net = Abandoned->net;
+	    fprintf(Failfptr, "Final:  Abandoned net %s\n", net->netname);
+	    nl = Abandoned->next;
+	    free(Abandoned);
+	    Abandoned = nl;
+	 }
       }
    }
    fprintf(stdout, "----------------------------------------------\n");
+
+   if (Failfptr) fclose(Failfptr);
+   if (CNfptr) fclose(CNfptr);
 
    exit(0);
 
@@ -579,7 +596,8 @@ dosecondstage()
       result = doroute(net, (u_char)0);
 
       if (result != 0) {
-	 fprintf(stderr, "Routing net with collisions\n");
+	 fflush(stdout);
+	 fprintf(stderr, "Routing net %s with collisions\n", net->netname);
          result = doroute(net, (u_char)1);
          if (result != 0) {
 	    if (net->noripup != NULL) {
@@ -599,6 +617,7 @@ dosecondstage()
          if (result != 0) {
 	    // Complete failure to route, even allowing collisions.
 	    // Abandon routing this net.
+	    fflush(stdout);
 	    fprintf(stderr, "----------------------------------------------\n");
 	    fprintf(stderr, "Complete failure on net %s:  Abandoning.\n",
 			net->netname);
@@ -1052,7 +1071,12 @@ int route_segs(ROUTE rt, u_char stage)
   bbox.x2 = bbox.y2 = 0;
   bbox.x1 = NumChannelsX[0];
   bbox.y1 = NumChannelsY[0];
-  set_node_to_net(n1, PR_SOURCE, &glist, &bbox);
+  rval = set_node_to_net(n1, PR_SOURCE, &glist, &bbox, stage);
+
+  if (rval == -2) {
+     printf("Node of net %s has no tap points---unable to route!\n", n1->netname);
+     return -1;
+  }
 
   // Now search for all other nodes on the same net that have not yet been
   // routed, and flag all of their taps as PR_TARGET
@@ -1061,11 +1085,19 @@ int route_segs(ROUTE rt, u_char stage)
   for (n2 = Nlnodes; n2; n2 = n2->next) {
      if (n2 == n1) continue;
      if (n2->netnum != n1->netnum) continue;
-     if (set_node_to_net(n2, PR_TARGET, NULL, &bbox) == 0) {
+     rval = set_node_to_net(n2, PR_TARGET, NULL, &bbox, stage);
+     if (rval == 0) {
 	n2save = n2;
 	result = 1;
      }
+     else if (rval == -2) {
+        printf("Node of net %s has no tap points---unable to route!\n", n2->netname);
+	if (result == 0) result = -1;
+     }
   }
+
+  /* If there's only one node left and it's not routable, then fail. */
+  if (result == -1) return -1;
 
   // Check for the possibility that there is already a route to the target
   if (!result) {
@@ -1104,7 +1136,7 @@ int route_segs(ROUTE rt, u_char stage)
   // algorithm.  If the initial max cost is so low that no route can
   // be found, it will be doubled on each pass.
 
-  maxcost = 2 * MAX((bbox.x2 - bbox.x1), (bbox.y2 - bbox.y1)) * SegCost +
+  maxcost = 1 + 2 * MAX((bbox.x2 - bbox.x1), (bbox.y2 - bbox.y1)) * SegCost +
 		(int)stage * ConflictCost;
   maxcost /= (n1->numnodes - 1);
 
