@@ -198,7 +198,7 @@ NETLIST find_colliding(NET net)
    NET  fnet;
    ROUTE rt;
    SEG seg;
-   int lay, x, y, k, orignet;
+   int lay, x, y, orignet;
 
    /* Scan the routed points for recorded collisions.	*/
 
@@ -380,8 +380,7 @@ void ripup_net(NET net, u_char restore)
 
 int eval_pt(GRIDP *ept, u_char flags, u_char stage)
 {
-    u_char conflict = (u_char)0;
-    int k, j, thiscost = 0;
+    int thiscost = 0;
     NODE node;
     NETLIST nl;
     PROUTE *Pr, *Pt;
@@ -412,20 +411,26 @@ int eval_pt(GRIDP *ept, u_char flags, u_char stage)
 
     Pr = &Obs2[newpt.lay][OGRID(newpt.x, newpt.y, newpt.lay)];
 
-    if (!(Pr->flags & PR_COST)) {
+    if (!(Pr->flags & (PR_COST | PR_SOURCE))) {
        // 2nd stage allows routes to cross existing routes
-       if (stage && (k < Numnets)) {
+       if (stage && (Pr->prdata.net < Numnets)) {
 	  if (Nodesav[newpt.lay][OGRID(newpt.x, newpt.y, newpt.lay)] != NULL)
 	     return 0;			// But cannot route over terminals!
 
 	  // Is net k in the "noripup" list?  If so, don't route it */
 
 	  for (nl = CurNet->noripup; nl; nl = nl->next) {
-	     if (nl->net->netnum == k)
+	     if (nl->net->netnum == Pr->prdata.net)
 		return 0;
 	  }
-	  conflict = (u_char)PR_CONFLICT;	// Save the number of the colliding net
-	  k = 0;
+
+	  // In case of a collision, we change the grid point to be routable
+	  // but flag it as a point of collision so we can later see what
+	  // were the net numbers of the interfering routes by cross-referencing
+	  // the Obs[][] array.
+
+	  Pr->flags |= (PR_CONFLICT | PR_COST);
+	  Pr->prdata.cost = MAXRT;
 	  thiscost = ConflictCost;
        }
        else
