@@ -94,8 +94,8 @@ struct proute_ {        // partial route
 #define PR_PROCESSED	0x08		// Tag to avoid visiting more than once
 #define PR_CONFLICT	0x10		// Two nets collide here during stage 2
 #define PR_SOURCE	0x20		// This is a source node
-#define PR_TARGET	0x80		// This is a target node
-#define PR_COST		0x40		// if 1, use prdata.cost, not prdata.net
+#define PR_TARGET	0x40		// This is a target node
+#define PR_COST		0x80		// if 1, use prdata.cost, not prdata.net
 
 // Linked string list
 

@@ -653,21 +653,22 @@ dosecondstage()
       while(nl) {
 	 nl2 = nl->next;
          fprintf(stdout, "Ripping up blocking net %s\n", nl->net->netname);
-	 ripup_net(nl->net, (u_char)1);
-	 for (fn = FailedNets; fn && fn->next != NULL; fn = fn->next);
-	 if (fn)
-	    fn->next = nl;
-	 else
-	    FailedNets = nl;
+	 if (ripup_net(nl->net, (u_char)1) == TRUE) { 
+	    for (fn = FailedNets; fn && fn->next != NULL; fn = fn->next);
+	    if (fn)
+	       fn->next = nl;
+	    else
+	       FailedNets = nl;
 
-	 // Add nl->net to "noripup" list for this net, so it won't be
-	 // routed over again by the net.  Avoids infinite looping in
-	 // the second stage.
+	    // Add nl->net to "noripup" list for this net, so it won't be
+	    // routed over again by the net.  Avoids infinite looping in
+	    // the second stage.
 
-	 fn = (NETLIST)malloc(sizeof(struct net_));
-	 fn->next = net->noripup;
-	 net->noripup = fn;
-	 fn->net = nl->net;
+	    fn = (NETLIST)malloc(sizeof(struct net_));
+	    fn->next = net->noripup;
+	    net->noripup = fn;
+	    fn->net = nl->net;
+	 }
 
 	 nl->next = (NETLIST)NULL;
 	 nl = nl2;
@@ -1482,6 +1483,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
    double dc;
    int horizontal, vertical;
    DPOINT dp1, dp2;
+   u_char offset;
    int stubroute = 0;
 
    Pathon = -1;
@@ -1496,17 +1498,18 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		// Check first position for terminal offsets
 		seg = (SEG)rt->segments;
 		lastseg = saveseg = seg;
+		layer = seg->layer;
 		if (seg) {
-		   dir = Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)];
+		   dir = Obs[layer][OGRID(seg->x1, seg->y1, layer)];
 		   dir &= PINOBSTRUCTMASK;
-		   if (dir) {
-		      layer = seg->layer;
+		   if (dir && Nodesav[layer][OGRID(seg->x1, seg->y1, layer)] != NULL) {
+		      stubroute = 1;
 		      if (special == (u_char)0)
 		         fprintf(stdout, "Stub route distance %g to terminal"
 				" at %d %d (%d)\n",
 				Stub[layer][OGRID(seg->x1, seg->y1, layer)],
 				seg->x1, seg->y1, layer);
-		      stubroute = 1;
+
 		      dc = Xlowerbound + (double)seg->x1 * PitchX[layer];
 		      x = (int)((dc + 1e-4) * oscale);
 		      if (dir == STUBROUTE_EW)
@@ -1533,18 +1536,42 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		for (seg = rt->segments; seg; seg = seg->next) {
 		   layer = seg->layer;
 
+		   // Check for offset terminals
+
+		   offset = (u_char)0;
+		   dir = Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)];
+		   dir &= PINOBSTRUCTMASK;
+		   if (dir && Nodesav[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)]
+				== NULL) {
+		      if (special == (u_char)0) {
+		         fprintf(stdout, "Offset terminal distance %g to grid"
+				" at %d %d (%d)\n",
+				Stub[layer][OGRID(seg->x1, seg->y1, layer)],
+				seg->x1, seg->y1, layer);
+			 offset = (u_char)1;
+		      }
+		   }
+
 		   // To do: pick up route layer name from lefInfo.
 		   // At the moment, technology names don't even match,
 		   // and are redundant between CIFLayer[] from the
 		   // config file and lefInfo.
 
 		   dc = Xlowerbound + (double)seg->x1 * PitchX[layer];
+		   if (offset && dir == STUBROUTE_EW)
+			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
 		   x = (int)((dc + 1e-4) * oscale);
 		   dc = Ylowerbound + (double)seg->y1 * PitchY[layer];
+		   if (offset && dir == STUBROUTE_NS)
+			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
 		   y = (int)((dc + 1e-4) * oscale);
 		   dc = Xlowerbound + (double)seg->x2 * PitchX[layer];
+		   if (offset && dir == STUBROUTE_EW && seg->segtype == ST_VIA)
+			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
 		   x2 = (int)((dc + 1e-4) * oscale);
 		   dc = Ylowerbound + (double)seg->y2 * PitchY[layer];
+		   if (offset && dir == STUBROUTE_NS && seg->segtype == ST_VIA)
+			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
 		   y2 = (int)((dc + 1e-4) * oscale);
 		   switch (seg->segtype) {
 		      case ST_WIRE:
@@ -1599,16 +1626,17 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		if (lastseg && ((lastseg != saveseg)
 				|| (lastseg->segtype == ST_WIRE))) {
 		    seg = lastseg;
-		    dir = Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)];
+		    layer = seg->layer;
+		    dir = Obs[layer][OGRID(seg->x2, seg->y2, layer)];
 		    dir &= PINOBSTRUCTMASK;
-		    if (dir) {
-		       layer = seg->layer;
+		    if (dir && Nodesav[layer][OGRID(seg->x2, seg->y2, layer)] != NULL) {
+		       stubroute = 1;
 		       if (special == (u_char)0)
-		          fprintf(stdout, "Stub route distance %g to terminal"
+			  fprintf(stdout, "Stub route distance %g to terminal"
 				" at %d %d (%d)\n",
 				Stub[layer][OGRID(seg->x2, seg->y2, layer)],
 				seg->x2, seg->y2, layer);
-		       stubroute = 1;
+
 		       dc = Xlowerbound + (double)seg->x2 * PitchX[layer];
 		       x = (int)((dc + 1e-4) * oscale);
 		       if (dir == STUBROUTE_EW)
@@ -1631,7 +1659,6 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		       pathto(Cmd, x2, y2, horizontal, vertical);
 		    }
 		}
-
 		if (Pathon != -1) Pathon = 0;
 
 	    } // if (rt->segments && !rt->output)
@@ -1702,6 +1729,7 @@ void emit_routes(char *filename, double oscale)
     }
     fputs(line, Cmd);	// Write the NETS line
     if (numnets != (Numnets - MIN_NET_NUMBER)) {
+	fflush(stdout);
         fprintf(stderr, "emit_routes():  DEF file has %d nets, but we want"
 		" to write %d\n", numnets, Numnets - MIN_NET_NUMBER);
 	if (numnets > Numnets) numnets = Numnets;

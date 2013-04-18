@@ -481,7 +481,13 @@ void create_obstructions_from_nodes()
 			       n2 = Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)];
 
 			    k = Obs[ds->layer][OGRID(gridx, gridy, ds->layer)];
-			    if (k < Numnets && k != (u_int)node->netnum && n2 == NULL) {
+
+			    // Define stub routes over obstructions.  In case of
+			    // a port that is inaccessible from a grid point, the
+			    // stub information will show how to adjust the
+			    // route position to cleanly attach to the port.
+
+			    if (k != (u_int)node->netnum && n2 == NULL) {
 				dir = STUBROUTE_X;
 				if (dy >= ds->y1 && dy <= ds->y2) {
 				   dir = STUBROUTE_EW;
@@ -502,12 +508,20 @@ void create_obstructions_from_nodes()
 				else if (dist < -delta[ds->layer])
 				    dist = -delta[ds->layer];
 
-				Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+				if (k < Numnets) {
+				   Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= (u_int)g->netnum[i] | dir; 
-				Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
+				   Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= node;
-				Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)]
+				   Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= node;
+				}
+				else {
+				   // Keep showing an obstruction, but add the
+				   // direction info and log the stub distance.
+				   Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					|= dir; 
+				}
 				Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= dist;
 			    }

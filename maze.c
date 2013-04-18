@@ -40,7 +40,17 @@ extern int TotalRoutes;
 /* in the x1, x2, y1, y2 values					*/
 /*								*/
 /* If "stage" is 1 (rip-up and reroute), then don't let an	*/
-/* existing route prevent us from adding terminals.		*/
+/* existing route prevent us from adding terminals.  However,	*/
+/* the area will be first checked for any part of the terminal	*/
+/* that is routable, only resorting to overwriting colliding	*/
+/* nets if there are no other available taps.  Defcon stage 3	*/
+/* indicates desperation due to a complete lack of routable	*/
+/* taps.  This happens if, for example, a port is offset from	*/
+/* the routing grid and tightly boxed in by obstructions.  In	*/
+/* such case, we allow routing on an obstruction, but flag the	*/
+/* point.  In the output stage, the stub route information will	*/
+/* be used to reposition the contact on the port and away from	*/
+/* the obstruction.						*/
 /*								*/
 /* If we completely fail to find a tap point under any		*/
 /* condition, then return -2.  This is a fatal error;  there	*/
@@ -49,7 +59,7 @@ extern int TotalRoutes;
 
 int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char stage)
 {
-    int x, y, lay, k;
+    int x, y, lay, k, obsnet = 0;
     int result = 0;
     u_char found_one = (u_char)0;
     POINT gpoint;
@@ -105,6 +115,7 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
 	     if (y > bbox->y2) bbox->y2 = y;
 	  }
        }
+       else if (Pr->prdata.net < Numnets) obsnet++;
     }
 
     // Do the same for point in the halo around the tap, but only if
@@ -115,8 +126,7 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
        x = ntap->gridx;
        y = ntap->gridy;
 
-       // Don't process extended areas if they coincide with
-       // other nodes.
+       // Don't process extended areas if they coincide with other nodes.
 
        if (Nodeloc[lay][OGRID(x, y, lay)] != (NODE)NULL &&
 		Nodeloc[lay][OGRID(x, y, lay)] != node)
@@ -126,10 +136,13 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
        if (Pr->flags & PR_SOURCE) {
 	  result = 1;				// Node is already connected!
        }
-       else if (((Pr->prdata.net == node->netnum) || (stage == (u_char)2)) &&
-			!(Pr->flags & newflags)) {
-	  Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
+       else if ( !(Pr->flags & newflags) &&
+		((Pr->prdata.net == node->netnum) ||
+		(stage == (u_char)2 && Pr->prdata.net < Numnets) ||
+		(stage == (u_char)3))) {
+
 	  if (Pr->prdata.net != node->netnum) Pr->flags |= PR_CONFLICT;
+	  Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
 	  Pr->prdata.cost = (newflags == PR_SOURCE) ? 0 : MAXRT;
 
 	  // push this point on the stack to process
@@ -152,6 +165,7 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
 	     if (y > bbox->y2) bbox->y2 = y;
 	  }
        }
+       else if (Pr->prdata.net < Numnets) obsnet++;
     }
 
     // That which is already routed (routes should be attached to source
@@ -209,15 +223,23 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
        }
     }
 
-    // In the case that no valid tap points were found,	if
-    // we're on the rip-up and reroute section, try again,
-    // ignoring existing routes that are in the way of the
-    // tap point.  If that fails, then we are in trouble;
-    // this point is apparently not routable.
+    // In the case that no valid tap points were found,	if we're on the
+    // rip-up and reroute section, try again, ignoring existing routes that
+    // are in the way of the tap point.  If that fails, then we will
+    // route over obstructions and shift the contact when committing the
+    // route solution.  And if that fails, we're basically hosed.
+    //
+    // Make sure to check for the case that the tap point is simply not
+    // reachable from any grid point, in the first stage, so we don't
+    // wait until the rip-up and reroute stage to route them.
 
     if ((result == 0) && (found_one == (u_char)0)) {
        if (stage == (u_char)1)
           return set_node_to_net(node, newflags, pushlist, bbox, (u_char)2);
+       else if (stage == (u_char)2)
+          return set_node_to_net(node, newflags, pushlist, bbox, (u_char)3);
+       else if ((stage == (u_char)0) && (obsnet == 0))
+          return set_node_to_net(node, newflags, pushlist, bbox, (u_char)3);
        else
 	  return -2;
     }
@@ -316,9 +338,9 @@ NETLIST find_colliding(NET net)
 /* array.							*/
 /*--------------------------------------------------------------*/
 
-void ripup_net(NET net, u_char restore)
+u_char ripup_net(NET net, u_char restore)
 {
-   int thisnet, oldnet, x, y, lay;
+   int thisnet, oldnet, x, y, lay, dir;
    NODE node;
    NODELIST nl;
    ROUTE rt;
@@ -338,19 +360,27 @@ void ripup_net(NET net, u_char restore)
 	       y = seg->y1;
 	       while (1) {
 	          oldnet = Obs[lay][OGRID(x, y, lay)] & ~PINOBSTRUCTMASK;
-	          if (oldnet != 0) {
+	          if ((oldnet > 0) && (oldnet < Numnets)) {
 	             if (oldnet != thisnet) {
 		        fprintf(stderr, "Error: position %d %d layer %d has net "
 				"%d not %d!\n", x, y, lay, oldnet, thisnet);
-		        break;	// Something went wrong
+		        return FALSE;	// Something went wrong
 	             }
 
 	             // Reset the net number to zero along this route for
-	             // every point that is not a node tap.
+	             // every point that is not a node tap.  Points that
+		     // were routed over obstructions to reach off-grid
+		     // taps are returned to obstructions.
 
-	             if (Nodesav[lay][OGRID(x, y, lay)] == (NODE)NULL)
-		        Obs[lay][OGRID(x, y, lay)] = 0;
+	             if (Nodesav[lay][OGRID(x, y, lay)] == (NODE)NULL) {
+			dir = Obs[lay][OGRID(x, y, lay)] & PINOBSTRUCTMASK;
+			if (dir == 0)
+		           Obs[lay][OGRID(x, y, lay)] = 0;
+			else
+		           Obs[lay][OGRID(x, y, lay)] = (Numnets + 1) | dir;
+		     }
 		  }
+
 		  // This break condition misses via ends, but those are
 		  // terminals and don't get ripped out.
 
@@ -394,6 +424,8 @@ void ripup_net(NET net, u_char restore)
 	 free(rt);
       }
    }
+
+   return TRUE;
 }
 
 /*--------------------------------------------------------------*/
@@ -554,7 +586,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
    int  x, y;
    int  dx, dy, dl;
    NODE n1;
-   u_int netnum, dir1, dir2;
+   u_int netnum, netobs1, netobs2, dir1, dir2;
    u_char first = (u_char)1;
    u_char dmask;
    PROUTE *Pr;
@@ -970,8 +1002,18 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 
       // now fill in the Obs structure with this route....
 
-      dir1 = Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] & PINOBSTRUCTMASK;
-      dir2 = Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] & PINOBSTRUCTMASK;
+      netobs1 = Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)];
+      netobs2 = Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)];
+
+      dir1 = netobs1 & PINOBSTRUCTMASK;
+      dir2 = netobs2 & PINOBSTRUCTMASK;
+
+      netobs1 &= ~PINOBSTRUCTMASK;
+      netobs2 &= ~PINOBSTRUCTMASK;
+
+      // If Obs shows this position as an obstruction, then this was a port with
+      // no taps in reach of a grid point.  This will be dealt with by moving
+      // the via off-grid and onto the port position in emit_routes().
 
       if (stage == (u_char)0) {
          if (seg->segtype == ST_VIA) {
@@ -1005,6 +1047,15 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 	    Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] |= dir1;
          }
       }
+
+      // Not sure this is necessary, but always keep stub direction information
+      // on obstructions that have been routed over, so that in the rip-up
+      // stage, we can return them to obstructions.
+
+      if (netobs1 > Numnets)
+	  Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] |= dir1;
+      if (netobs2 > Numnets)
+	  Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] |= dir2;
 
       lrend = lrcur;		// Save the last route position
       lrend->x1 = lrcur->x1;
