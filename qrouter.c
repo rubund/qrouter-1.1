@@ -1477,13 +1477,13 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
    ROUTE rt;
    NODE node;
    GATE g;
-   u_int dir;
+   u_int dir1, dir2;
    int i, layer;
    int x, y, x2, y2;
    double dc;
    int horizontal, vertical;
    DPOINT dp1, dp2;
-   u_char offset;
+   float offset1, offset2;
    int stubroute = 0;
 
    Pathon = -1;
@@ -1500,9 +1500,9 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		lastseg = saveseg = seg;
 		layer = seg->layer;
 		if (seg) {
-		   dir = Obs[layer][OGRID(seg->x1, seg->y1, layer)];
-		   dir &= PINOBSTRUCTMASK;
-		   if (dir && Nodesav[layer][OGRID(seg->x1, seg->y1, layer)] != NULL) {
+		   dir1 = Obs[layer][OGRID(seg->x1, seg->y1, layer)];
+		   dir1 &= PINOBSTRUCTMASK;
+		   if (dir1 && !(seg->segtype & ST_OFFSET_START)) {
 		      stubroute = 1;
 		      if (special == (u_char)0)
 		         fprintf(stdout, "Stub route distance %g to terminal"
@@ -1512,16 +1512,16 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 
 		      dc = Xlowerbound + (double)seg->x1 * PitchX[layer];
 		      x = (int)((dc + 1e-4) * oscale);
-		      if (dir == STUBROUTE_EW)
+		      if (dir1 == STUBROUTE_EW)
 			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
 		      x2 = (int)((dc + 1e-4) * oscale);
 		      dc = Ylowerbound + (double)seg->y1 * PitchY[layer];
 		      y = (int)((dc + 1e-4) * oscale);
-		      if (dir == STUBROUTE_NS)
+		      if (dir1 == STUBROUTE_NS)
 			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
 		      y2 = (int)((dc + 1e-4) * oscale);
 		      pathstart(Cmd, seg->layer, x2, y2, special, oscale);
-		      if (dir == STUBROUTE_EW) {
+		      if (dir1 == STUBROUTE_EW) {
 			 vertical = FALSE;
 			 horizontal = TRUE;
 		      }
@@ -1533,22 +1533,55 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		   }
 		}
 
+		lastseg = NULL;
 		for (seg = rt->segments; seg; seg = seg->next) {
 		   layer = seg->layer;
 
-		   // Check for offset terminals
+		   // Check for offset terminals at either point
 
-		   offset = (u_char)0;
-		   dir = Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)];
-		   dir &= PINOBSTRUCTMASK;
-		   if (dir && Nodesav[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)]
-				== NULL) {
+		   offset1 = 0.0;
+		   offset2 = 0.0;
+		   dir1 = 0;
+		   dir2 = 0;
+
+		   if (seg->segtype & ST_OFFSET_START) {
+		      dir1 = Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] &
+				PINOBSTRUCTMASK;
+		      if (dir1 == 0 && lastseg) {
+		         dir1 = Obs[lastseg->layer][OGRID(lastseg->x2, lastseg->y2,
+					lastseg->layer)] & PINOBSTRUCTMASK;
+		         offset1 = Stub[lastseg->layer][OGRID(lastseg->x2,
+					lastseg->y2, lastseg->layer)];
+		      }
+		      else
+		         offset1 = Stub[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)];
+
 		      if (special == (u_char)0) {
-		         fprintf(stdout, "Offset terminal distance %g to grid"
-				" at %d %d (%d)\n",
-				Stub[layer][OGRID(seg->x1, seg->y1, layer)],
-				seg->x1, seg->y1, layer);
-			 offset = (u_char)1;
+			 if (seg->segtype & ST_VIA)
+		            fprintf(stdout, "Offset terminal distance %g to grid"
+					" at %d %d (%d)\n", offset1,
+					seg->x1, seg->y1, layer);
+		      }
+		   }
+		   if (seg->segtype & ST_OFFSET_END) {
+		      dir2 = Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] &
+				PINOBSTRUCTMASK;
+		      if (dir2 == 0 && seg->next) {
+		         dir2 = Obs[seg->next->layer][OGRID(seg->next->x1,
+					seg->next->y1, seg->next->layer)] &
+					PINOBSTRUCTMASK;
+		         offset2 = Stub[seg->next->layer][OGRID(seg->next->x1,
+					seg->next->y1, seg->next->layer)];
+		      }
+		      else
+		         offset2 = Stub[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)];
+
+		      if (special == (u_char)0) {
+			 if ((seg->segtype & ST_VIA)
+					&& !(seg->segtype & ST_OFFSET_START))
+		            fprintf(stdout, "Offset terminal distance %g to grid"
+					" at %d %d (%d)\n", offset2,
+					seg->x2, seg->y2, layer);
 		      }
 		   }
 
@@ -1558,22 +1591,18 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		   // config file and lefInfo.
 
 		   dc = Xlowerbound + (double)seg->x1 * PitchX[layer];
-		   if (offset && dir == STUBROUTE_EW)
-			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
+		   if (dir1 == STUBROUTE_EW) dc += offset1;
 		   x = (int)((dc + 1e-4) * oscale);
 		   dc = Ylowerbound + (double)seg->y1 * PitchY[layer];
-		   if (offset && dir == STUBROUTE_NS)
-			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
+		   if (dir1 == STUBROUTE_NS) dc += offset1;
 		   y = (int)((dc + 1e-4) * oscale);
 		   dc = Xlowerbound + (double)seg->x2 * PitchX[layer];
-		   if (offset && dir == STUBROUTE_EW && seg->segtype == ST_VIA)
-			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
+		   if (dir2 == STUBROUTE_EW) dc += offset2;
 		   x2 = (int)((dc + 1e-4) * oscale);
 		   dc = Ylowerbound + (double)seg->y2 * PitchY[layer];
-		   if (offset && dir == STUBROUTE_NS && seg->segtype == ST_VIA)
-			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
+		   if (dir2 == STUBROUTE_NS) dc += offset2;
 		   y2 = (int)((dc + 1e-4) * oscale);
-		   switch (seg->segtype) {
+		   switch (seg->segtype & ~(ST_OFFSET_START | ST_OFFSET_END)) {
 		      case ST_WIRE:
 			 if (Pathon != 1) {	// 1st point of route seg
 			    if (special == (u_char)0)
@@ -1624,12 +1653,12 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 
 		// Check last position for terminal offsets
 		if (lastseg && ((lastseg != saveseg)
-				|| (lastseg->segtype == ST_WIRE))) {
+				|| (lastseg->segtype & ST_WIRE))) {
 		    seg = lastseg;
 		    layer = seg->layer;
-		    dir = Obs[layer][OGRID(seg->x2, seg->y2, layer)];
-		    dir &= PINOBSTRUCTMASK;
-		    if (dir && Nodesav[layer][OGRID(seg->x2, seg->y2, layer)] != NULL) {
+		    dir2 = Obs[layer][OGRID(seg->x2, seg->y2, layer)];
+		    dir2 &= PINOBSTRUCTMASK;
+		    if (dir2 && !(seg->segtype & ST_OFFSET_END)) {
 		       stubroute = 1;
 		       if (special == (u_char)0)
 			  fprintf(stdout, "Stub route distance %g to terminal"
@@ -1639,15 +1668,15 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 
 		       dc = Xlowerbound + (double)seg->x2 * PitchX[layer];
 		       x = (int)((dc + 1e-4) * oscale);
-		       if (dir == STUBROUTE_EW)
+		       if (dir2 == STUBROUTE_EW)
 			  dc += Stub[layer][OGRID(seg->x2, seg->y2, layer)];
 		       x2 = (int)((dc + 1e-4) * oscale);
 		       dc = Ylowerbound + (double)seg->y2 * PitchY[layer];
 		       y = (int)((dc + 1e-4) * oscale);
-		       if (dir == STUBROUTE_NS)
+		       if (dir2 == STUBROUTE_NS)
 			  dc += Stub[layer][OGRID(seg->x2, seg->y2, layer)];
 		       y2 = (int)((dc + 1e-4) * oscale);
-		       if (dir == STUBROUTE_EW) {
+		       if (dir2 == STUBROUTE_EW) {
 			  vertical = FALSE;
 			  horizontal = TRUE;
 		       }

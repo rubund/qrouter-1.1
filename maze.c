@@ -313,10 +313,7 @@ NETLIST find_colliding(NET net)
 
    /* Diagnostic */
 
-   if (nl == NULL) {
-      fprintf(stderr, "Error:  Failed to find colliding nets!\n");
-   }
-   else {
+   if (nl != NULL) {
       fprintf(stderr, "Best route of %s collides with nets: ",
 		net->netname);
       for (cnl = nl; cnl; cnl = cnl->next) {
@@ -963,7 +960,6 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 	 rt->segments = seg;
       else
 	 lseg->next = seg;
-      lseg = seg;
 
       // Continue processing predecessors as long as the direction is the same,
       // so we get a single long wire segment.  This minimizes the number of
@@ -1048,14 +1044,40 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
          }
       }
 
-      // Not sure this is necessary, but always keep stub direction information
-      // on obstructions that have been routed over, so that in the rip-up
-      // stage, we can return them to obstructions.
+      // Keep stub information on obstructions that have been routed
+      // over, so that in the rip-up stage, we can return them to obstructions.
 
       if (netobs1 > Numnets)
 	  Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] |= dir1;
       if (netobs2 > Numnets)
 	  Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] |= dir2;
+
+      // An offset route end on the previous segment, if it is a via, needs
+      // to carry over to this one, if it is a wire route.
+
+      if (lseg && ((lseg->segtype & (ST_VIA | ST_OFFSET_END)) ==
+			(ST_VIA | ST_OFFSET_END)))
+	 if (seg->segtype != ST_VIA)
+	    seg->segtype |= ST_OFFSET_START;
+
+      // Check if the route ends are offset.  If so, add flags.  The segment
+      // entries are integer grid points, so offsets need to be made when
+      // the location is output.
+
+      if (dir1)
+	 if (Nodesav[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] == NULL) {
+	    seg->segtype |= ST_OFFSET_START;
+
+	    // An offset on a via needs to be applied to the previous route
+	    // segment as well, if that route is a wire.
+
+	    if (lseg && (seg->segtype & ST_VIA) && !(lseg->segtype & ST_VIA))
+	       lseg->segtype |= ST_OFFSET_END;
+	 }
+
+      if (dir2)
+	 if (Nodesav[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] == NULL)
+	    seg->segtype |= ST_OFFSET_END;
 
       lrend = lrcur;		// Save the last route position
       lrend->x1 = lrcur->x1;
@@ -1090,6 +1112,8 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 	 }
 	 return TRUE;
       }
+
+      lseg = seg;	// Move to next segment position
    }
 
    // This block is not reachable
@@ -1123,11 +1147,11 @@ int writeback_route(ROUTE rt)
       dir1 = Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] & PINOBSTRUCTMASK;
       dir2 = Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] & PINOBSTRUCTMASK;
 
-      if (seg->segtype == ST_VIA) {
+      if (seg->segtype & ST_VIA) {
 	 Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] = netnum;
 	 Obs[seg->layer + 1][OGRID(seg->x1, seg->y1, seg->layer + 1)] = netnum;
       }
-      else if (seg->segtype == ST_WIRE) {
+      else if (seg->segtype & ST_WIRE) {
 	 if (seg->x1 < seg->x2) {
 	    for (i = seg->x1; i <= seg->x2; i++) {
 	       Obs[seg->layer][OGRID(i, seg->y1, seg->layer)] = netnum;

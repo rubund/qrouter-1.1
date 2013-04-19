@@ -108,7 +108,10 @@ struct string_ {
 
 /* Path segment information */
 
-enum segtype_ {ST_WIRE, ST_VIA};
+#define  ST_WIRE		0x01
+#define	 ST_VIA			0x02
+#define	 ST_OFFSET_START	0x04	/* (x1, y1) is offset from grid */
+#define	 ST_OFFSET_END		0x08	/* (x2, y2) is offset from grid */
 
 typedef struct seg_ *SEG;
 
@@ -116,7 +119,7 @@ struct seg_ {
    SEG next;
    int layer;
    int x1, y1, x2, y2;
-   int segtype;
+   u_char segtype;
 };
 
 /* DSEG is like a SEG, but coordinates are in microns (therefore type double)	*/
