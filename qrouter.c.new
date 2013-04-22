@@ -1583,7 +1583,6 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		         offset1 = Stub[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)];
 
 		      // Additional offset for vias vs. plain route layer
-		      /*
 		      if (seg->segtype & ST_VIA) {
 			 if (offset1 < 0)
 			    offset1 -= (LefGetViaWidth(seg->layer, seg->layer, 0)
@@ -1592,7 +1591,6 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			    offset1 += (LefGetViaWidth(seg->layer, seg->layer, 0)
 					- LefGetRouteWidth(seg->layer));
 		      }
-		      */
 
 		      if (special == (u_char)0) {
 			 if (seg->segtype & ST_VIA)
@@ -1615,7 +1613,6 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		         offset2 = Stub[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)];
 
 		      // Additional offset for vias vs. plain route layer
-		      /*
 		      if (seg->segtype & ST_VIA) {
 			 if (offset2 < 0)
 			    offset2 -= (LefGetViaWidth(seg->layer, seg->layer, 0)
@@ -1624,7 +1621,6 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			    offset2 += (LefGetViaWidth(seg->layer, seg->layer, 0)
 					- LefGetRouteWidth(seg->layer));
 		      }
-		      */
 
 		      if (special == (u_char)0) {
 			 if ((seg->segtype & ST_VIA)

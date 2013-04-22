@@ -1066,6 +1066,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
       // the location is output.
 
       if (dir1)
+	 /* ??? */
 	 if (Nodesav[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] == NULL) {
 	    seg->segtype |= ST_OFFSET_START;
 
@@ -1077,6 +1078,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 	 }
 
       if (dir2)
+	 /* ??? */
 	 if (Nodesav[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] == NULL)
 	    seg->segtype |= ST_OFFSET_END;
 

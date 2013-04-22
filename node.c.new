@@ -410,12 +410,83 @@ void create_obstructions_from_nodes()
 			 // Area inside defined pin geometry
 
 			 if (dy > ds->y1 && gridy >= 0) {
+			     int orignet = Obs[ds->layer][OGRID(gridx,
+					gridy, ds->layer)];
+
 			     Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= (u_int)node->netnum;
 			     Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= node;
 			     Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= node;
+
+			     if (orignet > Numnets) {
+				double sdist = 0.5 * LefGetRouteWidth(ds->layer);
+
+				// If a cell is positioned off-grid, then a grid
+				// point may be inside a pin and still be unroutable.
+				// For DRC-clean standard cells, this can only happen
+				// if the grid point is < 1/2 route width away from a
+				// pin edge.  So find which pin edge is too close,
+				// and force an offset.
+
+				if (dy - ds->y1 < sdist) {
+				   if (ds->y2 - dy >= sdist) {
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= ds->y1 + sdist - dy;
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_NS; 
+				   }
+				   else {
+				      // Pin is narrow and there is no place to
+				      // put a route.
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= no_net;
+				   }
+				}
+				else if (ds->y2 - dy < sdist) {
+			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= ds->y2 - sdist - dy;
+			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					|= STUBROUTE_NS; 
+				}
+
+				/* At least for now, there is no way to specify
+				 * separate offsets in the X and Y directions.
+				 * So if we have defined a NS offset, we cannot
+				 * set an EW offset, since the offset distances
+				 * may be different.
+				 */
+
+				if ((Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					& STUBROUTE_NS) == 0) {
+
+				   if (dx - ds->x1 < sdist) {
+				      if (ds->x2 - dx >= sdist) {
+			                 Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= ds->x1 + sdist - dx;
+			                 Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_EW; 
+				      }
+				      else {
+				         // Pin is narrow and there is no place to
+				         // put a route.
+			                 Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					   	= no_net;
+				      }
+				   }
+				   else if (ds->x2 - dx < sdist) {
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					   = ds->x2 - sdist - dx;
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					   |= STUBROUTE_EW; 
+				   }
+				}
+				// Diagnostic, to be removed
+				fprintf(stderr, "Port overlaps obstruction at"
+					" grid %d %d, position %g %g\n",
+					gridx, gridy, dx, dy);
+			     }
 			 }
 
 			 // Check that we have not created a PINOBSTRUCT
@@ -487,25 +558,35 @@ void create_obstructions_from_nodes()
 			    // route position to cleanly attach to the port.
 
 			    if (k != (u_int)node->netnum && n2 == NULL) {
-				dir = STUBROUTE_X;
-				if (dy >= ds->y1 && dy <= ds->y2) {
-				   dir = STUBROUTE_EW;
-				   dist = (float)(((ds->x1 + ds->x2) / 2.0) - dx);
-				}
-				if (dx >= ds->x1 && dx <= ds->x2) {
-				   dir = STUBROUTE_NS;
-				   dist = (float)(((ds->y1 + ds->y2) / 2.0) - dy);
-				}
+				if (k == 0)
+				   dir = 0;
+				else {
+				   dir = STUBROUTE_X;
+				   if (dy >= ds->y1 && dy <= ds->y2) {
+				      dir = STUBROUTE_EW;
+				      if (dx < ds->x1)
+				         dist = (float)(ds->x1 - dx);
+				      else if (dx > ds->x2)
+				         dist = (float)(dx - ds->x2);
+				   }
+				   if (dx >= ds->x1 && dx <= ds->x2) {
+				      dir = STUBROUTE_NS;
+				      if (dy < ds->y1)
+				         dist = (float)(ds->y1 - dy);
+				      else if (dy > ds->y2)
+				         dist = (float)(dy - ds->y2);
+				   }
 
-				// Limit stub distance so that we do not route
-				// from the edge to the center of a long, narrow
-				// tap.  It might make more sense just to
-				// calculate the distance to the tap's near edge.
+				   // Limit stub distance so that we do not route
+				   // from the edge to the center of a long, narrow
+				   // tap.  It might make more sense just to
+				   // calculate the distance to the tap's near edge.
 
-				if (dist > delta[ds->layer])
-				    dist = delta[ds->layer];
-				else if (dist < -delta[ds->layer])
-				    dist = -delta[ds->layer];
+				   if (dist > delta[ds->layer])
+				       dist = delta[ds->layer];
+				   else if (dist < -delta[ds->layer])
+				       dist = -delta[ds->layer];
+				}
 
 				if (k < Numnets) {
 				   Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
