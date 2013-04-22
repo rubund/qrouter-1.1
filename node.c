@@ -410,12 +410,58 @@ void create_obstructions_from_nodes()
 			 // Area inside defined pin geometry
 
 			 if (dy > ds->y1 && gridy >= 0) {
+			     int orignet = Obs[ds->layer][OGRID(gridx,
+					gridy, ds->layer)];
+
 			     Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= (u_int)node->netnum;
 			     Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= node;
 			     Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= node;
+
+			     if (orignet > Numnets) {
+				double sdistx = 0.5 * LefGetViaWidth(ds->layer,
+						ds->layer, 0);
+				double sdisty = 0.5 * LefGetViaWidth(ds->layer,
+						ds->layer, 1);
+
+				// If a cell is positioned off-grid, then a grid
+				// point may be inside a pin and still be unroutable.
+				// For DRC-clean standard cells, this can only happen
+				// if the grid point is < 1/2 via width away from a
+				// pin edge.  So find which pin edge is too close,
+				// and force an offset.
+
+				if (dx - ds->x1 < sdistx) {
+			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= ds->x1 + sdistx - dx;
+			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					|= STUBROUTE_EW; 
+				}
+				else if (ds->x2 - dx < sdistx) {
+			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= ds->x2 - sdistx - dx;
+			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					|= STUBROUTE_EW; 
+				}
+				if (dy - ds->y1 < sdisty) {
+			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= ds->y1 + sdisty - dy;
+			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					|= STUBROUTE_NS; 
+				}
+				else if (ds->y2 - dy < sdisty) {
+			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= ds->y2 - sdisty - dy;
+			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					|= STUBROUTE_NS; 
+				}
+				// Diagnostic, to be removed
+				fprintf(stderr, "Port overlaps obstruction at"
+					"grid %d %d, position %g %g\n",
+					gridx, gridy, dx, dy);
+			     }
 			 }
 
 			 // Check that we have not created a PINOBSTRUCT

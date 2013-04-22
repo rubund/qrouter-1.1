@@ -922,7 +922,8 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 			newlr2->next = lrprev;
 		  }
 		  else {
-		     printf("Warning:  Failed to remove stacked via!\n");
+		     printf("Error:  Failed to remove stacked via at grid "
+				"point %d %d!\n", lrcur->x1, lrcur->y1);
 		     stacks = 0;
 		  }
 	       }

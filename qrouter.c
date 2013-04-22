@@ -1520,15 +1520,41 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		      if (dir1 == STUBROUTE_NS)
 			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
 		      y2 = (int)((dc + 1e-4) * oscale);
-		      pathstart(Cmd, seg->layer, x2, y2, special, oscale);
 		      if (dir1 == STUBROUTE_EW) {
 			 vertical = FALSE;
 			 horizontal = TRUE;
+			 if (special == (u_char)1) {
+			    // Special nets do not automatically include
+			    // 1/2 route width at the ends, so add these.
+			    dc = oscale * 0.5 * LefGetViaWidth(layer, layer, 0);
+			    if (x < x2) {
+			       x -= dc;
+			       x2 += dc;
+			    }
+			    else {
+			       x += dc;
+			       x2 -= dc;
+			    }
+			 }
 		      }
 		      else {
 			 vertical = TRUE;
 			 horizontal = FALSE;
+			 if (special == (u_char)1) {
+			    // Special nets do not automatically include
+			    // 1/2 route width at the ends, so add these.
+			    dc = oscale * 0.5 * LefGetViaWidth(layer, layer, 1);
+			    if (y < y2) {
+			       y -= dc;
+			       y2 += dc;
+			    }
+			    else {
+			       y += dc;
+			       y2 -= dc;
+			    }
+			 }
 		      }
+		      pathstart(Cmd, seg->layer, x2, y2, special, oscale);
 		      pathto(Cmd, x, y, horizontal, vertical);
 		   }
 		}
@@ -1679,10 +1705,36 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		       if (dir2 == STUBROUTE_EW) {
 			  vertical = FALSE;
 			  horizontal = TRUE;
+			  if (special == (u_char)1) {
+			     // Special nets do not automatically include
+			     // 1/2 route width at the ends, so add these.
+			     dc = oscale * 0.5 * LefGetViaWidth(layer, layer, 0);
+			     if (x < x2) {
+			        x -= dc;
+			        x2 += dc;
+			     }
+			     else {
+			        x += dc;
+			        x2 -= dc;
+			     }
+			  }
 		       }
 		       else {
 			  vertical = TRUE;
 			  horizontal = FALSE;
+			  if (special == (u_char)1) {
+			     // Special nets do not automatically include
+			     // 1/2 route width at the ends, so add these.
+			     dc = oscale * 0.5 * LefGetViaWidth(layer, layer, 1);
+			     if (y < y2) {
+			        y -= dc;
+			        y2 += dc;
+			     }
+			     else {
+			        y += dc;
+			        y2 -= dc;
+			     }
+			  }
 		       }
 		       if (Pathon != 1) pathstart(Cmd, layer, x, y, special, oscale);
 		       pathto(Cmd, x2, y2, horizontal, vertical);
@@ -1757,10 +1809,10 @@ void emit_routes(char *filename, double oscale)
        fputs(line, Cmd);
     }
     fputs(line, Cmd);	// Write the NETS line
-    if (numnets != (Numnets - MIN_NET_NUMBER)) {
+    if (numnets != (Numnets - MIN_NET_NUMBER - 1)) {
 	fflush(stdout);
         fprintf(stderr, "emit_routes():  DEF file has %d nets, but we want"
-		" to write %d\n", numnets, Numnets - MIN_NET_NUMBER);
+		" to write %d\n", numnets, Numnets - MIN_NET_NUMBER - 1);
 	if (numnets > Numnets) numnets = Numnets;
     }
 
