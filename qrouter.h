@@ -254,11 +254,16 @@ struct netlist_ {
 // The following values are added to the Obs[] structure for unobstructed
 // route positions close to a terminal, but not close enough to connect
 // directly.  They describe which direction to go to reach the terminal.
+// The Stub[] vector indicates the distance needed to reach the terminal.
+// The OFFSET_TAP flag marks a position that is inside a terminal but
+// which needs to be adjusted in one direction to avoid a close obstruction.
+// The Stub[] vector indicates the distance needed to avoid the obstruction.
 
-#define PINOBSTRUCTMASK	((u_int)0x60000000) 	// takes values from below
+#define PINOBSTRUCTMASK	((u_int)0xE0000000)  // takes values from below
 #define STUBROUTE_NS	((u_int)0x20000000)  // route north or south to reach terminal
 #define STUBROUTE_EW	((u_int)0x40000000)  // route east or west to reach terminal
 #define STUBROUTE_X	((u_int)0x60000000)  // diagonal---not routable
+#define OFFSET_TAP	((u_int)0x80000000)  // position needs to be offset
 
 extern STRING DontRoute;
 extern STRING CriticalNet;
@@ -302,8 +307,8 @@ void   setMask();
 void   expandMask();
 
 void   pathstart(FILE *cmd, int layer, int x, int y, u_char special, double oscale);
-void   pathto(FILE *cmd, int x, int y, int vertical, int horizontal);
-void   pathvia(FILE *cmd, int layer, int x, int y);
+void   pathto(FILE *cmd, int x, int y, int horizontal, int lastx, int lasty);
+void   pathvia(FILE *cmd, int layer, int x, int y, int lastx, int lasty);
 
 void   helpmessage();
 

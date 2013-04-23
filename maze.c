@@ -1065,22 +1065,17 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
       // entries are integer grid points, so offsets need to be made when
       // the location is output.
 
-      if (dir1)
-	 /* ??? */
-	 if (Nodesav[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] == NULL) {
-	    seg->segtype |= ST_OFFSET_START;
+      if (dir1 & OFFSET_TAP) {
+	 seg->segtype |= ST_OFFSET_START;
 
-	    // An offset on a via needs to be applied to the previous route
-	    // segment as well, if that route is a wire.
+	 // An offset on a via needs to be applied to the previous route
+	 // segment as well, if that route is a wire.
 
-	    if (lseg && (seg->segtype & ST_VIA) && !(lseg->segtype & ST_VIA))
-	       lseg->segtype |= ST_OFFSET_END;
-	 }
+	 if (lseg && (seg->segtype & ST_VIA) && !(lseg->segtype & ST_VIA))
+	    lseg->segtype |= ST_OFFSET_END;
+      }
 
-      if (dir2)
-	 /* ??? */
-	 if (Nodesav[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] == NULL)
-	    seg->segtype |= ST_OFFSET_END;
+      if (dir2 & OFFSET_TAP) seg->segtype |= ST_OFFSET_END;
 
       lrend = lrcur;		// Save the last route position
       lrend->x1 = lrcur->x1;

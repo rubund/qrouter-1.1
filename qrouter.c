@@ -48,7 +48,7 @@ int   Numgates = 0;
 int   Numpins = 0;
 int   Verbose = 0;
 int   PRind = 0;
-int   CurrentPass = 0;           // Current Pass
+int   CurrentPass = 0;		// Current Pass
 
 /*--------------------------------------------------------------*/
 /* Open the "failed" and "cn" (critical nets) files.		*/
@@ -368,18 +368,31 @@ void pathstart(FILE *cmd, int layer, int x, int y, u_char special, double oscale
 /*   SIDE EFFECTS: 						*/
 /*--------------------------------------------------------------*/
 
-void pathto(FILE *cmd, int x, int y, int horizontal, int vertical)
+void pathto(FILE *cmd, int x, int y, int horizontal, int lastx, int lasty)
 {
     if (Pathon <= 0) {
 	fprintf(stderr, "pathto():  Major error.  Added to a "
 		"non-existent path!\n"
 		"Doing it anyway.\n");
     }
+
+    /* If the route is not manhattan, then it's because an offset
+     * was added to the last point, and we need to add a small
+     * jog to the route.
+     */
+
+    if ((x != lastx) && (y != lasty)) {
+	if (horizontal)
+	   pathto(cmd, x, y, FALSE, x, lasty);
+	else
+	   pathto(cmd, x, y, TRUE, lastx, y);
+    }
+
     fprintf(cmd, "( ");
-    if (vertical)
-	fprintf(cmd, "* ");
-    else
+    if (horizontal)
 	fprintf(cmd, "%d ", x);
+    else
+	fprintf(cmd, "* ");
 
     if (horizontal)
 	fprintf(cmd, "* ");
@@ -398,20 +411,26 @@ void pathto(FILE *cmd, int x, int y, int horizontal, int vertical)
 /*   SIDE EFFECTS: 						*/
 /*--------------------------------------------------------------*/
 
-void pathvia(FILE *cmd, int layer, int x, int y)
+void pathvia(FILE *cmd, int layer, int x, int y, int lastx, int lasty)
 {
-   char *s;
+    char *s;
 
-  s = Via[layer];
-  if (Pathon <= 0) {
-     if (Pathon == -1)
-	fprintf(cmd, "+ ROUTED ");
-     else 
-	fprintf(cmd, "\n  NEW ");
-     fprintf(cmd, "%s ( %d %d ) ", CIFLayer[layer], x, y);
-  }
-  fprintf(cmd, "%s ", s);
-  Pathon = 0;
+    s = Via[layer];
+    if (Pathon <= 0) {
+       if (Pathon == -1)
+	  fprintf(cmd, "+ ROUTED ");
+       else 
+	  fprintf(cmd, "\n  NEW ");
+       fprintf(cmd, "%s ( %d %d ) ", CIFLayer[layer], x, y);
+    }
+    else {
+       if (x != lastx)
+	  pathto(cmd, x, y, TRUE, lastx, y);
+       else if (y != lasty)
+	  pathto(cmd, x, y, FALSE, x, lasty);
+    }
+    fprintf(cmd, "%s ", s);
+    Pathon = 0;
 
 } /* pathvia() */
 
@@ -1047,7 +1066,7 @@ int route_segs(ROUTE rt, u_char stage)
 	         Pr->flags = 0;		// Clear all flags
 	         Pr->prdata.net = (netnum & ~PINOBSTRUCTMASK);
 	         dir = netnum & PINOBSTRUCTMASK;
-	         if ((dir != 0) && (dir == STUBROUTE_X)) {
+	         if ((dir != 0) && ((dir & STUBROUTE_X) == STUBROUTE_X)) {
 		    if ((netnum & ~PINOBSTRUCTMASK) == rt->netnum)
 		       Pr->prdata.net = 0;	// STUBROUTE_X not routable
 	         }
@@ -1481,7 +1500,8 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
    int i, layer;
    int x, y, x2, y2;
    double dc;
-   int horizontal, vertical;
+   int lastx, lasty;
+   int horizontal;
    DPOINT dp1, dp2;
    float offset1, offset2;
    int stubroute = 0;
@@ -1493,7 +1513,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
       if (node->netnum == net->netnum) {
 	 for (rt = node->routes; rt; rt = rt->next) {
 	    if (rt->segments && !rt->output && rt->node) {
-		vertical = horizontal = FALSE;
+		horizontal = FALSE;
 
 		// Check first position for terminal offsets
 		seg = (SEG)rt->segments;
@@ -1521,12 +1541,11 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
 		      y2 = (int)((dc + 1e-4) * oscale);
 		      if (dir1 == STUBROUTE_EW) {
-			 vertical = FALSE;
 			 horizontal = TRUE;
 			 if (special == (u_char)1) {
 			    // Special nets do not automatically include
 			    // 1/2 route width at the ends, so add these.
-			    dc = oscale * 0.5 * LefGetViaWidth(layer, layer, 0);
+			    dc = oscale * 0.5 * LefGetRouteWidth(layer);
 			    if (x < x2) {
 			       x -= dc;
 			       x2 += dc;
@@ -1538,12 +1557,11 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			 }
 		      }
 		      else {
-			 vertical = TRUE;
 			 horizontal = FALSE;
 			 if (special == (u_char)1) {
 			    // Special nets do not automatically include
 			    // 1/2 route width at the ends, so add these.
-			    dc = oscale * 0.5 * LefGetViaWidth(layer, layer, 1);
+			    dc = oscale * 0.5 * LefGetRouteWidth(layer);
 			    if (y < y2) {
 			       y -= dc;
 			       y2 += dc;
@@ -1555,7 +1573,9 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			 }
 		      }
 		      pathstart(Cmd, seg->layer, x2, y2, special, oscale);
-		      pathto(Cmd, x, y, horizontal, vertical);
+		      pathto(Cmd, x, y, horizontal, x2, y2);
+		      lastx = x;
+		      lasty = y;
 		   }
 		}
 
@@ -1583,7 +1603,6 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		         offset1 = Stub[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)];
 
 		      // Additional offset for vias vs. plain route layer
-		      /*
 		      if (seg->segtype & ST_VIA) {
 			 if (offset1 < 0)
 			    offset1 -= (LefGetViaWidth(seg->layer, seg->layer, 0)
@@ -1592,7 +1611,6 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			    offset1 += (LefGetViaWidth(seg->layer, seg->layer, 0)
 					- LefGetRouteWidth(seg->layer));
 		      }
-		      */
 
 		      if (special == (u_char)0) {
 			 if (seg->segtype & ST_VIA)
@@ -1615,7 +1633,6 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		         offset2 = Stub[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)];
 
 		      // Additional offset for vias vs. plain route layer
-		      /*
 		      if (seg->segtype & ST_VIA) {
 			 if (offset2 < 0)
 			    offset2 -= (LefGetViaWidth(seg->layer, seg->layer, 0)
@@ -1624,7 +1641,6 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			    offset2 += (LefGetViaWidth(seg->layer, seg->layer, 0)
 					- LefGetRouteWidth(seg->layer));
 		      }
-		      */
 
 		      if (special == (u_char)0) {
 			 if ((seg->segtype & ST_VIA)
@@ -1641,28 +1657,29 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		   // config file and lefInfo.
 
 		   dc = Xlowerbound + (double)seg->x1 * PitchX[layer];
-		   if (dir1 == STUBROUTE_EW) dc += offset1;
+		   if (dir1 == (STUBROUTE_EW | OFFSET_TAP)) dc += offset1;
 		   x = (int)((dc + 1e-4) * oscale);
 		   dc = Ylowerbound + (double)seg->y1 * PitchY[layer];
-		   if (dir1 == STUBROUTE_NS) dc += offset1;
+		   if (dir1 == (STUBROUTE_NS | OFFSET_TAP)) dc += offset1;
 		   y = (int)((dc + 1e-4) * oscale);
 		   dc = Xlowerbound + (double)seg->x2 * PitchX[layer];
-		   if (dir2 == STUBROUTE_EW) dc += offset2;
+		   if (dir2 == (STUBROUTE_EW | OFFSET_TAP)) dc += offset2;
 		   x2 = (int)((dc + 1e-4) * oscale);
 		   dc = Ylowerbound + (double)seg->y2 * PitchY[layer];
-		   if (dir2 == STUBROUTE_NS) dc += offset2;
+		   if (dir2 == (STUBROUTE_NS | OFFSET_TAP)) dc += offset2;
 		   y2 = (int)((dc + 1e-4) * oscale);
 		   switch (seg->segtype & ~(ST_OFFSET_START | ST_OFFSET_END)) {
 		      case ST_WIRE:
 			 if (Pathon != 1) {	// 1st point of route seg
-			    if (special == (u_char)0)
+			    if (special == (u_char)0) {
 			       pathstart(Cmd, seg->layer, x, y, (u_char)0, oscale);
+			       lastx = x;
+			       lasty = y;
+			    }
 			    if (x == x2) {
-				vertical = TRUE;
 				horizontal = FALSE;
 			    }
 			    else if (y == y2) {
-				vertical = FALSE;
 				horizontal = TRUE;
 			    }
 			    else {
@@ -1672,24 +1689,27 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			 }
 			 rt->output = TRUE;
 			 if (horizontal && x == x2) {
-			    vertical = TRUE;
 			    horizontal = FALSE;
 			 }
-			 if (vertical && y == y2) {
-			    vertical = FALSE;
+			 if ((!horizontal) && y == y2) {
 			    horizontal = TRUE;
 			 }
 			 if (!(x == x2) && !(y == y2)) {
-			    vertical = FALSE;
 			    horizontal = FALSE;
 			 }
-			 if (special == (u_char)0)
-			    pathto(Cmd, x2, y2, horizontal, vertical);
+			 if (special == (u_char)0) {
+			    pathto(Cmd, x2, y2, horizontal, lastx, lasty);
+			    lastx = x2;
+			    lasty = y2;
+			 }
 			 break;
 		      case ST_VIA:
 			 rt->output = TRUE;
-			 if (special == (u_char)0)
-			    pathvia(Cmd, layer, x, y);
+			 if (special == (u_char)0) {
+			    pathvia(Cmd, layer, x, y, lastx, lasty);
+			    lastx = x;
+			    lasty = y;
+			 }
 			 break;
 		      default:
 			 break;
@@ -1727,12 +1747,11 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			  dc += Stub[layer][OGRID(seg->x2, seg->y2, layer)];
 		       y2 = (int)((dc + 1e-4) * oscale);
 		       if (dir2 == STUBROUTE_EW) {
-			  vertical = FALSE;
 			  horizontal = TRUE;
 			  if (special == (u_char)1) {
 			     // Special nets do not automatically include
 			     // 1/2 route width at the ends, so add these.
-			     dc = oscale * 0.5 * LefGetViaWidth(layer, layer, 0);
+			     dc = oscale * 0.5 * LefGetRouteWidth(layer);
 			     if (x < x2) {
 			        x -= dc;
 			        x2 += dc;
@@ -1744,12 +1763,11 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			  }
 		       }
 		       else {
-			  vertical = TRUE;
 			  horizontal = FALSE;
 			  if (special == (u_char)1) {
 			     // Special nets do not automatically include
 			     // 1/2 route width at the ends, so add these.
-			     dc = oscale * 0.5 * LefGetViaWidth(layer, layer, 1);
+			     dc = oscale * 0.5 * LefGetRouteWidth(layer);
 			     if (y < y2) {
 			        y -= dc;
 			        y2 += dc;
@@ -1760,8 +1778,14 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			     }
 			  }
 		       }
-		       if (Pathon != 1) pathstart(Cmd, layer, x, y, special, oscale);
-		       pathto(Cmd, x2, y2, horizontal, vertical);
+		       if (Pathon != 1) {
+			  pathstart(Cmd, layer, x, y, special, oscale);
+			  lastx = x;
+			  lasty = y;
+		       }
+		       pathto(Cmd, x2, y2, horizontal, lastx, lasty);
+		       lastx = x2;
+		       lasty = y2;
 		    }
 		}
 		if (Pathon != -1) Pathon = 0;

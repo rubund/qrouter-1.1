@@ -410,12 +410,93 @@ void create_obstructions_from_nodes()
 			 // Area inside defined pin geometry
 
 			 if (dy > ds->y1 && gridy >= 0) {
+			     int orignet = Obs[ds->layer][OGRID(gridx,
+					gridy, ds->layer)];
+
+			     // Don't reprocess this node in case of
+			     // duplicate tap points.
+
+			     if ((orignet & ~PINOBSTRUCTMASK) == (u_int)node->netnum) {
+				gridy++;
+				continue;
+			     }
+
 			     Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= (u_int)node->netnum;
 			     Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= node;
 			     Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= node;
+			     Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= 0.0;
+
+			     if (orignet > Numnets) {
+				double sdist = 0.5 * LefGetRouteWidth(ds->layer);
+
+				// If a cell is positioned off-grid, then a grid
+				// point may be inside a pin and still be unroutable.
+				// For DRC-clean standard cells, this can only happen
+				// if the grid point is < 1/2 route width away from a
+				// pin edge.  So find which pin edge is too close,
+				// and force an offset.
+
+				if (dy - ds->y1 < sdist) {
+				   if (ds->y2 - dy >= sdist) {
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= ds->y1 + sdist - dy;
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= (STUBROUTE_NS | OFFSET_TAP);
+				   }
+				   else {
+				      // Pin is narrow and we have no reliable
+				      // place to put a route.
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= orignet;
+				   }
+				}
+				else if (ds->y2 - dy < sdist) {
+			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= ds->y2 - sdist - dy;
+			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					|= (STUBROUTE_NS | OFFSET_TAP);
+				}
+
+				/* At least for now, there is no way to specify
+				 * separate offsets in the X and Y directions.
+				 * So if we have defined a NS offset, we cannot
+				 * set an EW offset, since the offset distances
+				 * may be different.
+				 */
+
+				if ((Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					& STUBROUTE_NS) == 0) {
+
+				   if (dx - ds->x1 < sdist) {
+				      if (ds->x2 - dx >= sdist) {
+			                 Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= ds->x1 + sdist - dx;
+			                 Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= (STUBROUTE_EW | OFFSET_TAP);
+				      }
+				      else {
+				         // Pin is narrow and we have no reliable
+				         // place to put a route.
+			                 Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					   	= orignet;
+				      }
+				   }
+				   else if (ds->x2 - dx < sdist) {
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					   = ds->x2 - sdist - dx;
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					   |= (STUBROUTE_EW | OFFSET_TAP);
+				   }
+				}
+				// Diagnostic, to be removed
+				fprintf(stderr, "Port overlaps obstruction at"
+					" grid %d %d, position %g %g\n",
+					gridx, gridy, dx, dy);
+			     }
 			 }
 
 			 // Check that we have not created a PINOBSTRUCT
@@ -486,7 +567,8 @@ void create_obstructions_from_nodes()
 			    // stub information will show how to adjust the
 			    // route position to cleanly attach to the port.
 
-			    if (k != (u_int)node->netnum && n2 == NULL) {
+			    if (((k & ~PINOBSTRUCTMASK) != (u_int)node->netnum) &&
+					(n2 == NULL)) {
 				dir = STUBROUTE_X;
 				if (dy >= ds->y1 && dy <= ds->y2) {
 				   dir = STUBROUTE_EW;
@@ -519,7 +601,7 @@ void create_obstructions_from_nodes()
 				   // Keep showing an obstruction, but add the
 				   // direction info and log the stub distance.
 				   Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					|= dir; 
+					|= (dir | OFFSET_TAP); 
 				}
 				Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= dist;
