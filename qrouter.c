@@ -38,6 +38,7 @@ u_char *Mask[MAX_LAYERS];    // mask out best area to route, expand as needed
 u_int  *Obs[MAX_LAYERS];     // net obstructions in layer
 PROUTE *Obs2[MAX_LAYERS];    // used for pt->pt routes on layer
 float  *Stub[MAX_LAYERS];    // used for stub routing to pins
+float  *Obsinfo[MAX_LAYERS]; // temporary array used for detailed obstruction info
 NODE   *Nodeloc[MAX_LAYERS]; // nodes are here. . .
 NODE   *Nodesav[MAX_LAYERS]; // . . . and here (but not to be altered)
 DSEG   UserObs;		     // user-defined obstruction layers
@@ -47,8 +48,6 @@ int   Numnets = 0;
 int   Numgates = 0;
 int   Numpins = 0;
 int   Verbose = 0;
-int   PRind = 0;
-int   CurrentPass = 0;		// Current Pass
 
 /*--------------------------------------------------------------*/
 /* Open the "failed" and "cn" (critical nets) files.		*/
@@ -199,7 +198,7 @@ main(int argc, char *argv[])
       Mask[i] = (u_char *)calloc(NumChannelsX[i] * NumChannelsY[i],
 			sizeof(u_char));
       if (!Mask[i]) {
-	 fprintf(stderr, "Out of memory 1.\n");
+	 fprintf(stderr, "Out of memory 3.\n");
 	 exit(3);
       }
       */
@@ -207,21 +206,21 @@ main(int argc, char *argv[])
       Obs[i] = (u_int *)calloc(NumChannelsX[i] * NumChannelsY[i],
 			sizeof(u_int));
       if (!Obs[i]) {
-	 fprintf(stderr, "Out of memory 2.\n");
+	 fprintf(stderr, "Out of memory 4.\n");
 	 exit(4);
       }
 
-      Obs2[i] = (PROUTE *)calloc(NumChannelsX[i] * NumChannelsY[i],
-			sizeof(PROUTE));
-      if (!Obs2[i]) {
-	 fprintf( stderr, "Out of memory 3.\n");
+      Obsinfo[i] = (float *)calloc(NumChannelsX[i] * NumChannelsY[i],
+			sizeof(float));
+      if (!Obsinfo[i]) {
+	 fprintf(stderr, "Out of memory 5.\n");
 	 exit(5);
       }
 
       Stub[i] = (float *)calloc(NumChannelsX[i] * NumChannelsY[i],
 			sizeof(float));
       if (!Stub[i]) {
-	 fprintf( stderr, "Out of memory 4.\n");
+	 fprintf( stderr, "Out of memory 6.\n");
 	 exit(6);
       }
 
@@ -230,14 +229,14 @@ main(int argc, char *argv[])
       Nodeloc[i] = (NODE *)calloc(NumChannelsX[i] * NumChannelsY[i],
 		sizeof(NODE));
       if (!Nodeloc[i]) {
-         fprintf(stderr, "Out of memory 5.\n");
+         fprintf(stderr, "Out of memory 7.\n");
          exit(7);
       }
 
       Nodesav[i] = (NODE *)calloc(NumChannelsX[i] * NumChannelsY[i],
 		sizeof(NODE));
       if (!Nodesav[i]) {
-         fprintf(stderr, "Out of memory 6.\n");
+         fprintf(stderr, "Out of memory 8.\n");
          exit(8);
       }
    }
@@ -253,8 +252,24 @@ main(int argc, char *argv[])
    create_obstructions_from_gates();
    create_obstructions_from_nodes();
    create_obstructions_from_variable_pitch();
+   adjust_stub_lengths();
+
+   // Remove the Obsinfo array, which is no longer needed, and allocate
+   // the Obs2 array for costing information
+
+   for (i = 0; i < Num_layers; i++) free(Obsinfo[i]);
+
+   for (i = 0; i < Num_layers; i++) {
+      Obs2[i] = (PROUTE *)calloc(NumChannelsX[i] * NumChannelsY[i],
+			sizeof(PROUTE));
+      if (!Obs2[i]) {
+         fprintf( stderr, "Out of memory 9.\n");
+         exit(9);
+      }
+   }
+
     
-   // now we have netlist data, and can use it to get a list of nets.
+   // Now we have netlist data, and can use it to get a list of nets.
 
    FailedNets = (NETLIST)NULL;
    Abandoned = (NETLIST)NULL;
@@ -1183,7 +1198,6 @@ int route_segs(ROUTE rt, u_char stage)
   fflush(stdout);
 
   for (pass = 0; pass < Numpasses; pass++) {
-    CurrentPass = pass;
 
     if (!first) {
        fprintf(stdout, "\n");
@@ -1545,6 +1559,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			 if (special == (u_char)1) {
 			    // Special nets do not automatically include
 			    // 1/2 route width at the ends, so add these.
+			    /*
 			    dc = oscale * 0.5 * LefGetRouteWidth(layer);
 			    if (x < x2) {
 			       x -= dc;
@@ -1554,6 +1569,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			       x += dc;
 			       x2 -= dc;
 			    }
+			    */
 			 }
 		      }
 		      else {
@@ -1561,6 +1577,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			 if (special == (u_char)1) {
 			    // Special nets do not automatically include
 			    // 1/2 route width at the ends, so add these.
+			    /*
 			    dc = oscale * 0.5 * LefGetRouteWidth(layer);
 			    if (y < y2) {
 			       y -= dc;
@@ -1570,6 +1587,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			       y += dc;
 			       y2 -= dc;
 			    }
+			    */
 			 }
 		      }
 		      pathstart(Cmd, seg->layer, x2, y2, special, oscale);
@@ -1751,6 +1769,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			  if (special == (u_char)1) {
 			     // Special nets do not automatically include
 			     // 1/2 route width at the ends, so add these.
+			     /*
 			     dc = oscale * 0.5 * LefGetRouteWidth(layer);
 			     if (x < x2) {
 			        x -= dc;
@@ -1760,6 +1779,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			        x += dc;
 			        x2 -= dc;
 			     }
+			     */
 			  }
 		       }
 		       else {
@@ -1767,6 +1787,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			  if (special == (u_char)1) {
 			     // Special nets do not automatically include
 			     // 1/2 route width at the ends, so add these.
+			    /*
 			     dc = oscale * 0.5 * LefGetRouteWidth(layer);
 			     if (y < y2) {
 			        y -= dc;
@@ -1776,6 +1797,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			        y += dc;
 			        y2 -= dc;
 			     }
+			     */
 			  }
 		       }
 		       if (Pathon != 1) {

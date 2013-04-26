@@ -259,11 +259,22 @@ struct netlist_ {
 // which needs to be adjusted in one direction to avoid a close obstruction.
 // The Stub[] vector indicates the distance needed to avoid the obstruction.
 
-#define PINOBSTRUCTMASK	((u_int)0xE0000000)  // takes values from below
+#define PINOBSTRUCTMASK	((u_int)0xe0000000)  // takes values from below
 #define STUBROUTE_NS	((u_int)0x20000000)  // route north or south to reach terminal
 #define STUBROUTE_EW	((u_int)0x40000000)  // route east or west to reach terminal
 #define STUBROUTE_X	((u_int)0x60000000)  // diagonal---not routable
 #define OFFSET_TAP	((u_int)0x80000000)  // position needs to be offset
+#define NO_NET		((u_int)0x10000000)  // indicates a non-routable obstruction
+
+// Definitions used along with the NO_NET bit.
+#define	OBSTRUCT_N	((u_int)0x00000001)  // Obstruction to the north
+#define	OBSTRUCT_S	((u_int)0x00000002)  // Obstruction to the south
+#define	OBSTRUCT_E	((u_int)0x00000004)  // Obstruction to the east
+#define	OBSTRUCT_W	((u_int)0x00000008)  // Obstruction to the west
+#define OBSTRUCT_MASK	((u_int)0x0000000f)
+#define OBS_VDD		((u_int)0x00000010)  // Obstruction is VDD network
+#define OBS_VSS		((u_int)0x00000020)  // Obstruction is VSS network
+#define POWERBUS_MASK	((u_int)0x00000030)
 
 extern STRING DontRoute;
 extern STRING CriticalNet;
@@ -278,6 +289,7 @@ extern NODE   Nlnodes;
 
 extern u_int  *Obs[MAX_LAYERS];		// obstructions by layer, y, x
 extern PROUTE *Obs2[MAX_LAYERS]; 	// working copy of Obs 
+extern float  *Obsinfo[MAX_LAYERS];	// temporary detailed obstruction info
 extern float  *Stub[MAX_LAYERS];	// stub route distances to pins
 extern NODE   *Nodeloc[MAX_LAYERS];	// nodes are attached to grid points
 					// for reverse lookup
@@ -290,9 +302,6 @@ extern int   Numnets;
 extern int   Numgates;
 extern int   Numpins;
 extern int   Verbose;
-extern int   Loops;
-extern int   PRind;
-extern int   CurrentPass;
 
 NET    getnettoroute();
 void   dosecondstage();

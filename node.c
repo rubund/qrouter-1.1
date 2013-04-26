@@ -168,9 +168,6 @@ void create_obstructions_from_variable_pitch()
 {
    int l, o, vnum, hnum, x, y;
    double vpitch, hpitch;
-   u_int no_net;
-
-   no_net = (u_int)Numnets + 1;
 
    for (l = 0; l < Num_layers; l++) {
       o = LefGetRouteOrientation(l);
@@ -198,10 +195,75 @@ void create_obstructions_from_variable_pitch()
 	    if (x % hnum == 0) continue;
 	    for (y = 0; y < NumChannelsY[l]; y++) {
 	       if (y % vnum == 0) continue;
-	       Obs[l][OGRID(x, y, l)] = no_net;
+	       Obs[l][OGRID(x, y, l)] = NO_NET;
 	    }
 	 }
       }
+   }
+}
+
+/*--------------------------------------------------------------*/
+/* check_obstruct()---						*/
+/*	Called from create_obstructions_from_gates(), this	*/
+/* 	routine takes a grid point at (gridx, gridy) (physical	*/
+/* 	position (dx, dy)) and an obstruction defined by the	*/
+/*	rectangle "ds", and sets flags and fills the Obsinfo	*/
+/*	array to reflect how the obstruction affects routing to	*/
+/*	the grid position.					*/
+/*--------------------------------------------------------------*/
+
+void
+check_obstruct(int gridx, int gridy, DSEG ds, double dx, double dy)
+{
+    int *obsptr;
+    float dist;
+
+    obsptr = &(Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]);
+    dist = Obsinfo[ds->layer][OGRID(gridx, gridy, ds->layer)];
+
+    // Grid point is inside obstruction + halo.
+    *obsptr |= NO_NET;
+
+    // Completely inside obstruction?
+    if (dy > ds->y1 && dy < ds->y2 && dx > ds->x1 && dx < ds->x2)
+       *obsptr |= OBSTRUCT_MASK;
+
+    else {
+
+       // Make more detailed checks in each direction
+
+       if (dy < ds->y1) {
+	  if ((*obsptr & (OBSTRUCT_MASK & ~OBSTRUCT_N)) == 0) {
+	     if ((dist == 0) || ((ds->y1 - dy) < dist))
+		Obsinfo[ds->layer][OGRID(gridx, gridy, ds->layer)] = ds->y1 - dy;
+	     *obsptr |= OBSTRUCT_N;
+	  }
+	  else *obsptr |= OBSTRUCT_MASK;
+       }
+       else if (dy > ds->y2) {
+	  if ((*obsptr & (OBSTRUCT_MASK & ~OBSTRUCT_S)) == 0) {
+	     if ((dist == 0) || ((dy - ds->y2) < dist))
+		Obsinfo[ds->layer][OGRID(gridx, gridy, ds->layer)] = dy - ds->y2;
+	     *obsptr |= OBSTRUCT_S;
+	  }
+	  else *obsptr |= OBSTRUCT_MASK;
+       }
+       if (dx < ds->x1) {
+	  if ((*obsptr & (OBSTRUCT_MASK & ~OBSTRUCT_E)) == 0) {
+	     if ((dist == 0) || ((ds->x1 - dx) < dist))
+		Obsinfo[ds->layer][OGRID(gridx, gridy, ds->layer)] = ds->x1 - dx;
+             *obsptr |= OBSTRUCT_E;
+	  }
+	  else *obsptr |= OBSTRUCT_MASK;
+       }
+       else if (dx > ds->x2) {
+	  if ((*obsptr & (OBSTRUCT_MASK & ~OBSTRUCT_W)) == 0) {
+	     if ((dist == 0) || ((dx - ds->x2) < dist))
+		Obsinfo[ds->layer][OGRID(gridx, gridy, ds->layer)] = dx - ds->x2;
+	     *obsptr |= OBSTRUCT_W;
+	  }
+	  else *obsptr |= OBSTRUCT_MASK;
+       }
    }
 }
 
@@ -222,9 +284,9 @@ void create_obstructions_from_gates()
 {
     GATE g;
     DSEG ds;
-    int i, gridx, gridy;
+    int i, gridx, gridy, no_net, *obsptr;
     double dx, dy, delta[MAX_LAYERS];
-    u_int no_net;
+    float dist;
 
     // Get, and store, information for each layer on how much we
     // need to expand an obstruction layer to account for spacing
@@ -234,10 +296,15 @@ void create_obstructions_from_gates()
 	delta[i] = LefGetRouteKeepout(i);
     }
 
-    no_net = (u_int)Numnets + 1;
-
     // Give a single net number to all obstructions, over the range of the
     // number of known nets, so these positions cannot be routed through.
+    // If a grid position is not wholly inside an obstruction, then we
+    // maintain the direction of the nearest obstruction in Obs and the
+    // distance to it in Obsinfo.  This indicates that a route can avoid
+    // the obstruction by moving away from it by the amount in Obsinfo
+    // plus spacing clearance.  If another obstruction is found that
+    // prevents such a move, then all direction flags will be set, indicating
+    // that the position is not routable under any condition. 
 
     for (g = Nlgates; g; g = g->next) {
        for (ds = g->obs; ds; ds = ds->next) {
@@ -255,9 +322,9 @@ void create_obstructions_from_gates()
 		   dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
 	           if (dy > (ds->y2 + delta[ds->layer])
 				|| gridy >= NumChannelsY[ds->layer]) break;
-		   if (dy >= (ds->y1 - delta[ds->layer]) && gridy >= 0) {
-		      Obs[ds->layer][OGRID(gridx, gridy, ds->layer)] = no_net;
-		   }
+		   if (dy >= (ds->y1 - delta[ds->layer]) && gridy >= 0)
+		      check_obstruct(gridx, gridy, ds, dx, dy);
+
 		   gridy++;
 		}
 	     }
@@ -267,12 +334,17 @@ void create_obstructions_from_gates()
 
        for (i = 0; i < g->nodes; i++) {
 	  if (g->netnum[i] == 0) {	/* Unconnected node */
-	     // Diagnostic
+	     // Diagnostic, and power bus handling
+	     no_net = NO_NET;
 	     if (g->node[i]) {
-		if (strncasecmp(g->node[i], "vdd", 3)
-			&& strncasecmp(g->node[i], "gnd", 3)
-			&& strncasecmp(g->node[i], "vss", 3))
-		    fprintf(stdout, "Gate instance %s unconnected node %s\n",
+		if (!strncasecmp(g->node[i], "vdd", 3))
+		   no_net |= OBS_VDD;
+		else if (!strncasecmp(g->node[i], "gnd", 3))
+		   no_net |= OBS_VSS;
+		else if (!strncasecmp(g->node[i], "vss", 3))
+		   no_net |= OBS_VSS;
+		else
+		   fprintf(stdout, "Gate instance %s unconnected node %s\n",
 				g->gatename, g->node[i]);
 	     }
 	     else
@@ -293,9 +365,9 @@ void create_obstructions_from_gates()
 		         dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
 		         if (dy > (ds->y2 + delta[ds->layer])
 					|| gridy >= NumChannelsY[ds->layer]) break;
-		         if (dy >= (ds->y1 - delta[ds->layer]) && gridy >= 0) {
-			    Obs[ds->layer][OGRID(gridx, gridy, ds->layer)] = no_net;
-		         }
+		         if (dy >= (ds->y1 - delta[ds->layer]) && gridy >= 0)
+			    check_obstruct(gridx, gridy, ds, dx, dy);
+
 		         gridy++;
 		      }
 		   }
@@ -331,7 +403,7 @@ void create_obstructions_from_gates()
 		    if (dy > (ds->y2 + delta[ds->layer])
 				|| gridy >= NumChannelsY[ds->layer]) break;
 		    if (dy >= (ds->y1 - delta[ds->layer]) && gridy >= 0) {
-			Obs[ds->layer][OGRID(gridx, gridy, ds->layer)] = no_net;
+		        check_obstruct(gridx, gridy, ds, dx, dy);
 		    }
 		    gridy++;
 		}
@@ -367,12 +439,10 @@ void create_obstructions_from_nodes()
     GATE g;
     DPOINT dp;
     DSEG ds;
-    u_int dir, k, no_net;
+    u_int dir, k;
     int i, gx, gy, gridx, gridy, net;
     double dx, dy, delta[MAX_LAYERS];
     float dist;
-
-    no_net = (u_int)Numnets + 1;
 
     for (i = 0; i < Num_layers; i++) {
 	delta[i] = LefGetRouteKeepout(i);
@@ -394,7 +464,7 @@ void create_obstructions_from_nodes()
 	     // Get the node record associated with this pin.
 	     node = g->noderec[i];
 
-	     // First mark all areas inside node geometry.
+	     // First mark all areas inside node geometry boundary.
 
              for (ds = g->taps[i]; ds; ds = ds->next) {
 		gridx = (int)((ds->x1 - Xlowerbound) / PitchX[ds->layer]) - 1;
@@ -413,85 +483,64 @@ void create_obstructions_from_nodes()
 			     int orignet = Obs[ds->layer][OGRID(gridx,
 					gridy, ds->layer)];
 
-			     // Don't reprocess this node in case of
-			     // duplicate tap points.
-
 			     if ((orignet & ~PINOBSTRUCTMASK) == (u_int)node->netnum) {
+
+				// Duplicate tap point.   Don't re-process it. (?)
 				gridy++;
 				continue;
 			     }
 
-			     Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+			     if (!(orignet & NO_NET)) {
+			        Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= (u_int)node->netnum;
-			     Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
+			        Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= node;
-			     Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)]
+			        Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= node;
-			     Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+			        Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= 0.0;
-
-			     if (orignet > Numnets) {
-				double sdist = 0.5 * LefGetRouteWidth(ds->layer);
+			     }
+			     else if ((orignet & NO_NET) && ((orignet & OBSTRUCT_MASK)
+					!= OBSTRUCT_MASK)) {
+				double sdist = LefGetRouteKeepout(ds->layer);
 
 				// If a cell is positioned off-grid, then a grid
 				// point may be inside a pin and still be unroutable.
-				// For DRC-clean standard cells, this can only happen
-				// if the grid point is < 1/2 route width away from a
-				// pin edge.  So find which pin edge is too close,
-				// and force an offset.
+				// The Obsinfo[] array tells where an obstruction is,
+				// if there was only one obstruction in one direction
+				// blocking the grid point.  If so, then we set the
+				// Stub[] distance to move the tap away from the
+				// obstruction to resolve the DRC error.
 
-				if (dy - ds->y1 < sdist) {
-				   if (ds->y2 - dy >= sdist) {
-			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
-						= ds->y1 + sdist - dy;
-			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-						|= (STUBROUTE_NS | OFFSET_TAP);
-				   }
-				   else {
-				      // Pin is narrow and we have no reliable
-				      // place to put a route.
-			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-						= orignet;
-				   }
-				}
-				else if (ds->y2 - dy < sdist) {
+				if (orignet & OBSTRUCT_N) {
 			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= ds->y2 - sdist - dy;
+					= -(sdist - Obsinfo[ds->layer]
+					[OGRID(gridx, gridy, ds->layer)]);
 			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					|= (STUBROUTE_NS | OFFSET_TAP);
 				}
-
-				/* At least for now, there is no way to specify
-				 * separate offsets in the X and Y directions.
-				 * So if we have defined a NS offset, we cannot
-				 * set an EW offset, since the offset distances
-				 * may be different.
-				 */
-
-				if ((Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					& STUBROUTE_NS) == 0) {
-
-				   if (dx - ds->x1 < sdist) {
-				      if (ds->x2 - dx >= sdist) {
-			                 Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
-						= ds->x1 + sdist - dx;
-			                 Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-						|= (STUBROUTE_EW | OFFSET_TAP);
-				      }
-				      else {
-				         // Pin is narrow and we have no reliable
-				         // place to put a route.
-			                 Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					   	= orignet;
-				      }
-				   }
-				   else if (ds->x2 - dx < sdist) {
-			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					   = ds->x2 - sdist - dx;
-			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					   |= (STUBROUTE_EW | OFFSET_TAP);
-				   }
+				else if (orignet & OBSTRUCT_S) {
+			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= sdist - Obsinfo[ds->layer]
+					[OGRID(gridx, gridy, ds->layer)];
+			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					|= (STUBROUTE_NS | OFFSET_TAP);
 				}
+				else if (orignet & OBSTRUCT_E) {
+			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= -(sdist - Obsinfo[ds->layer]
+					[OGRID(gridx, gridy, ds->layer)]);
+			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					|= (STUBROUTE_EW | OFFSET_TAP);
+				}
+				else if (orignet & OBSTRUCT_W) {
+			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= sdist - Obsinfo[ds->layer]
+					[OGRID(gridx, gridy, ds->layer)];
+			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					|= (STUBROUTE_EW | OFFSET_TAP);
+				}
+
 				// Diagnostic, to be removed
 				fprintf(stderr, "Port overlaps obstruction at"
 					" grid %d %d, position %g %g\n",
@@ -544,6 +593,7 @@ void create_obstructions_from_nodes()
 		         if (dy > (ds->y2 + delta[ds->layer]) ||
 				gridy >= NumChannelsY[ds->layer]) break;
 		         if (dy >= (ds->y1 - delta[ds->layer]) && gridy >= 0) {
+			    float xdist = 0.5 * LefGetRouteWidth(ds->layer);
 
 			    // Area inside halo around defined pin geometry.
 			    // Exclude areas already processed (areas inside
@@ -562,34 +612,124 @@ void create_obstructions_from_nodes()
 
 			    k = Obs[ds->layer][OGRID(gridx, gridy, ds->layer)];
 
-			    // Define stub routes over obstructions.  In case of
-			    // a port that is inaccessible from a grid point, the
+			    // In case of a port that is inaccessible from a grid
+			    // point, or not completely overlapping it, the
 			    // stub information will show how to adjust the
 			    // route position to cleanly attach to the port.
 
+			    dir = STUBROUTE_X;
+
 			    if (((k & ~PINOBSTRUCTMASK) != (u_int)node->netnum) &&
 					(n2 == NULL)) {
-				dir = STUBROUTE_X;
-				if (dy >= ds->y1 && dy <= ds->y2) {
-				   dir = STUBROUTE_EW;
-				   dist = (float)(((ds->x1 + ds->x2) / 2.0) - dx);
+
+				if ((k & OBSTRUCT_MASK) != 0) {
+				   float sdist = Obsinfo[ds->layer][OGRID(gridx,
+						gridy, ds->layer)];
+
+				   // If the point is marked as close to an
+				   // obstruction, we can declare this an
+				   // offset tap if we are not on a corner.
+				   // Because we cannot define both an offset
+				   // and a stub simultaneously, if the distance
+				   // to clear the obstruction does not make the
+				   // route reach the tap, then we mark the grid
+				   // position as unroutable.
+
+				   if (dy >= (ds->y1 - xdist) &&
+						dy <= (ds->y2 + xdist)) {
+				      if ((dx >= ds->x2) &&
+						((k & OBSTRUCT_MASK) == OBSTRUCT_E)) {
+				         dist = sdist - LefGetRouteKeepout(ds->layer);
+					 if ((dx - ds->x2 + dist) < xdist)
+				 	    dir = STUBROUTE_EW | OFFSET_TAP;
+				      }
+				      else if ((dx <= ds->x1) &&
+						((k & OBSTRUCT_MASK) == OBSTRUCT_W)) {
+				         dist = LefGetRouteKeepout(ds->layer) - sdist;
+					 if ((ds->x1 - dx - dist) < xdist)
+				            dir = STUBROUTE_EW | OFFSET_TAP;
+				      }
+			 	   }	
+				   if (dx >= (ds->x1 - xdist) &&
+						dx <= (ds->x2 + xdist)) {
+				      if ((dy >= ds->y2) &&
+						((k & OBSTRUCT_MASK) == OBSTRUCT_N)) {
+				         dist = sdist - LefGetRouteKeepout(ds->layer);
+					 if ((dy - ds->y2 + dist) < xdist)
+				            dir = STUBROUTE_NS | OFFSET_TAP;
+				      }
+				      else if ((dy <= ds->y1) &&
+						((k & OBSTRUCT_MASK) == OBSTRUCT_S)) {
+				         dist = LefGetRouteKeepout(ds->layer) - sdist;
+					 if ((ds->y1 - dy - dist) < xdist)
+				            dir = STUBROUTE_NS | OFFSET_TAP;
+				      }
+				   }
+				   // Otherwise, dir is left as STUBROUTE_X
 				}
-				if (dx >= ds->x1 && dx <= ds->x2) {
-				   dir = STUBROUTE_NS;
-				   dist = (float)(((ds->y1 + ds->y2) / 2.0) - dy);
+				else {
+
+				   // Cleanly unobstructed area.  Define stub
+				   // route from point to tap, with a 1/2 route
+				   // width overlap
+
+				   if (dx >= (ds->x1 - xdist) &&
+						dx <= (ds->x2 + xdist)) {
+				      dir = STUBROUTE_NS;
+				      if (ds->y1 > dy)
+				         dist = ds->y1 - dy + xdist;
+				      else if (ds->y2 < dy)
+				         dist = ds->y2 - dy - xdist;
+				      else
+				         dir = 0;  // Clean, no need for stub
+				   }
+				   else if (dy >= (ds->y1 - xdist) &&
+						dy <= (ds->y2 + xdist)) {
+				      dir = STUBROUTE_EW;
+				      if (ds->x1 > dx)
+				         dist = ds->x1 - dx + xdist;
+				      else if (ds->x2 < dx)
+				         dist = ds->x2 - dx - xdist;
+				      else
+					 dir = 0;  // Clean, no need for stub
+				   }
+
+				   if (dir == STUBROUTE_X) {
+
+				      // Outside of pin at a corner.  First, if one
+				      // direction is too far away to connect to a
+				      // pin, then we must route the other direction.
+
+				      if (dx < ds->x1 - xdist || dx > ds->x2 + xdist) {
+				         if (dy >= ds->y1 - xdist &&
+							dy <= ds->y2 + xdist) {
+				            dir = STUBROUTE_EW;
+				            dist = (float)(((ds->x1 + ds->x2) / 2.0)
+							- dx);
+					 }
+				      }
+				      else if (dy < ds->y1 - xdist ||
+							dy > ds->y2 + xdist) {
+				         dir = STUBROUTE_NS;
+				         dist = (float)(((ds->y1 + ds->y2) / 2.0) - dy);
+				      }
+
+				      // Otherwise we are too far away at a diagonal
+				      // to reach the pin by moving in any single
+				      // direction.  To be pedantic, we could define
+				      // some jogged stub, but for now, we just call
+				      // the point unroutable (leave dir = STUBROUTE_X)
+				   }
 				}
 
-				// Limit stub distance so that we do not route
-				// from the edge to the center of a long, narrow
-				// tap.  It might make more sense just to
-				// calculate the distance to the tap's near edge.
+				// Stub distances of <= 1/2 route width are useless
+				if (dir == STUBROUTE_NS || dir == STUBROUTE_EW)
+				   if (fabs(dist) < (xdist + 1e-4)) {
+				      dir = 0;
+				      dist = 0.0;
+				   }
 
-				if (dist > delta[ds->layer])
-				    dist = delta[ds->layer];
-				else if (dist < -delta[ds->layer])
-				    dist = -delta[ds->layer];
-
-				if (k < Numnets) {
+				if ((k < Numnets) && (dir != STUBROUTE_X)) {
 				   Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= (u_int)g->netnum[i] | dir; 
 				   Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -601,19 +741,24 @@ void create_obstructions_from_nodes()
 				   // Keep showing an obstruction, but add the
 				   // direction info and log the stub distance.
 				   Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					|= (dir | OFFSET_TAP); 
+					|= dir;
 				}
 				Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= dist;
 			    }
-			    else if (k & PINOBSTRUCTMASK) {
-			       if ((k & ~PINOBSTRUCTMASK) != (u_int)node->netnum) {
+			    else {
+			       int othernet = (k & ~PINOBSTRUCTMASK);
+			       if (othernet != 0 && othernet != (u_int)node->netnum) {
 
 			          // This location is too close to two different
 				  // node terminals and should not be used
+				  // (NOTE:  To be thorough, we should check
+				  // if othernet could be routed using a tap
+				  // offset.  By axing it we might lose the
+				  // only route point to one of the pins.)
 
 				  Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= no_net;
+					= NO_NET;
 				  Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= (NODE)NULL;
 				  Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -634,5 +779,321 @@ void create_obstructions_from_nodes()
     }
 
 } /* void create_obstructions_from_nodes( void ) */
+
+/*--------------------------------------------------------------*/
+/* adjust_stub_lengths()					*/
+/*								*/
+/*  Makes an additional pass through the tap and obstruction	*/
+/*  databases, checking geometry against the potential stub	*/
+/*  routes for DRC spacing violations.  Adjust stub routes as	*/
+/*  necessary to resolve the DRC error(s).			*/
+/*								*/
+/*  ARGS: none.							*/
+/*  RETURNS: nothing						*/
+/*  SIDE EFFECTS: none						*/
+/*  AUTHOR:  Tim Edwards, April 2013				*/
+/*--------------------------------------------------------------*/
+
+void adjust_stub_lengths()
+{
+    NODE node, n2;
+    GATE g;
+    DPOINT dp;
+    DSEG ds, ds2;
+    struct dseg_ dt, de;
+    u_int dir, k;
+    int i, gx, gy, gridx, gridy, net, orignet;
+    double dx, dy, delta[MAX_LAYERS], w, s;
+    float dist;
+    u_char errbox;
+
+    for (i = 0; i < Num_layers; i++) {
+	delta[i] = LefGetRouteKeepout(i) + LefGetRouteWidth(i);
+    }
+
+    // For each node terminal (gate pin), look at the surrounding grid points.
+    // If any define a stub route or an offset, check if the stub geometry
+    // or offset geometry would create a DRC spacing violation.  If so, adjust
+    // the stub route to resolve the error.  If the error cannot be resolved,
+    // mark the position as unroutable.  If it is the ONLY grid point accessible
+    // to the pin, keep it as-is and flag a warning.
+
+    for (g = Nlgates; g; g = g->next) {
+       for (i = 0; i < g->nodes; i++) {
+	  if (g->netnum[i] != 0) {
+
+	     // Get the node record associated with this pin.
+	     node = g->noderec[i];
+
+	     // Work through each rectangle in the tap geometry
+
+             for (ds = g->taps[i]; ds; ds = ds->next) {
+		w = 0.5 * LefGetRouteWidth(ds->layer);
+		s = LefGetRouteSpacing(ds->layer);
+		gridx = (int)((ds->x1 - Xlowerbound - delta[ds->layer])
+			/ PitchX[ds->layer]) - 1;
+		while (1) {
+		   dx = (gridx * PitchX[ds->layer]) + Xlowerbound;
+		   if (dx > (ds->x2 + delta[ds->layer]) ||
+				gridx >= NumChannelsX[ds->layer]) break;
+		   else if (dx >= (ds->x1 - delta[ds->layer]) && gridx >= 0) {
+		      gridy = (int)((ds->y1 - Ylowerbound - delta[ds->layer])
+				/ PitchY[ds->layer]) - 1;
+		      while (1) {
+		         dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
+		         if (dy > (ds->y2 + delta[ds->layer]) ||
+				gridy >= NumChannelsY[ds->layer]) break;
+		         if (dy >= (ds->y1 - delta[ds->layer]) && gridy >= 0) {
+
+			     orignet = Obs[ds->layer][OGRID(gridx, gridy, ds->layer)];
+
+			     // Ignore this location if it is assigned to another
+			     // net, or is assigned to NO_NET.
+
+			     if ((orignet & ~PINOBSTRUCTMASK) != node->netnum) {
+				gridy++;
+				continue;
+			     }
+
+			     // STUBROUTE_X are unroutable;  leave them alone
+			     if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_X) {
+				gridy++;
+				continue;
+			     }
+
+			     // define a route box around the grid point
+
+			     errbox = FALSE;
+			     dt.x1 = dx - w;
+			     dt.x2 = dx + w;
+			     dt.y1 = dy - w;
+			     dt.y2 = dy + w;
+
+			     dist = Stub[ds->layer][OGRID(gridx, gridy, ds->layer)];
+
+			     // adjust the route box according to the stub
+			     // or offset geometry
+
+			     if (orignet & OFFSET_TAP) {
+				if (orignet & STUBROUTE_EW) {
+				   dt.x1 += dist;
+				   dt.x2 += dist;
+				}
+				else if (orignet & STUBROUTE_NS) {
+				   dt.y1 += dist;
+				   dt.y2 += dist;
+				}
+			     }
+			     else if (orignet & PINOBSTRUCTMASK) {
+				if (orignet & STUBROUTE_EW) {
+				   if (dist > 0)
+				      dt.x2 += dist;
+				   else
+				      dt.x1 += dist;
+				}
+				else if (orignet & STUBROUTE_NS) {
+				   if (dist > 0)
+				      dt.y2 += dist;
+				   else
+				      dt.y1 += dist;
+				}
+			     }
+			     de = dt;
+
+			     // check for DRC spacing interactions between
+			     // the tap box and the route box
+
+			     if ((dt.y1 - ds->y2) > 0 && (dt.y1 - ds->y2) < s) {
+				if (ds->x2 > (dt.x1 - s) && ds->x1 < (dt.x2 + s)) {
+				   de.y2 = dt.y1;
+				   de.y1 = ds->y2;
+				   errbox = TRUE;
+				}
+			     }
+			     else if ((ds->y1 - dt.y2) > 0 && (ds->y1 - dt.y2) < s) {
+				if (ds->x2 > (dt.x1 - s) && ds->x1 < (dt.x2 + s)) {
+				   de.y1 = dt.y2;
+				   de.y2 = ds->y1;
+				   errbox = TRUE;
+				}
+			     }
+
+			     if ((dt.x1 - ds->x2) > 0 && (dt.x1 - ds->x2) < s) {
+				if (ds->y2 > (dt.y1 - s) && ds->y1 < (dt.y2 + s)) {
+				   de.x2 = dt.x1;
+				   de.x1 = ds->x2;
+				   errbox = TRUE;
+				}
+			     }
+			     else if ((ds->x1 - dt.x2) > 0 && (ds->x1 - dt.x2) < s) {
+				if (ds->y2 > (dt.y1 - s) && ds->y1 < (dt.y2 + s)) {
+				   de.x1 = dt.x2;
+				   de.x2 = ds->x1;
+				   errbox = TRUE;
+				}
+			     }
+	
+			     if (errbox == TRUE) {
+			        // Chop areas off the error box that are covered by
+			        // other taps of the same port.
+
+			        for (ds2 = g->taps[i]; ds2; ds2 = ds2->next) {
+				   if (ds2 == ds) continue;
+
+				   if (ds2->x1 <= de.x1 && ds2->x2 >= de.x2 &&
+					ds2->y1 <= de.y1 && ds2->y2 >= de.y2) {
+				      errbox = FALSE;	// Completely covered
+				      break;
+				   }
+
+				   if (ds2->x1 < de.x2 && ds2->x2 > de.x1) {
+				      if (ds2->y1 < de.y2 && ds2->y2 > de.y1) {
+					 // Partial coverage
+					 if (ds2->x1 < de.x1 && ds2->x2 < de.x2)
+					    de.x1 = ds2->x2;
+					 if (ds2->x2 > de.x2 && ds2->x1 > de.x1)
+					    de.x2 = ds2->x1;
+					 if (ds2->y1 < de.y1 && ds2->y2 < de.y2)
+					    de.y1 = ds2->y2;
+					 if (ds2->y2 > de.y2 && ds2->y1 > de.y1)
+					    de.y2 = ds2->y1;
+				      }
+				   }
+				}
+			     }
+
+			     // Any area left over is a potential DRC error.
+
+			     if ((de.x2 <= de.x1) || (de.y2 <= de.y1))
+				errbox = FALSE;
+		
+			     if (errbox == TRUE) {
+
+				// Create stub route to cover error box, or
+				// if possible, stretch existing stub route
+				// to cover error box.
+
+				// Allow EW stubs to be changed to NS stubs and
+				// vice versa if the original stub length was less
+				// than a route width.  This means the grid position
+				// makes contact without the stub.  Moving the stub
+				// to another side should not create an error.
+
+				if (de.x2 > dt.x2) {
+				   if ((orignet & PINOBSTRUCTMASK) == 0) {
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_EW;
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= de.x2 - dx;
+				      errbox = FALSE;
+				   }
+				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_EW
+						&& (dist > 0)) {
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= de.x2 - dx;
+				      errbox = FALSE;
+				   }
+				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_NS
+						&& (fabs(dist) < (2 * w))) {
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						&= ~STUBROUTE_NS;
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_EW;
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= de.x2 - dx;
+				      errbox = FALSE;
+				   }
+				}
+				else if (de.x1 < dt.x1) {
+				   if ((orignet & PINOBSTRUCTMASK) == 0) {
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_EW;
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= de.x1 - dx;
+				      errbox = FALSE;
+				   }
+				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_EW
+						&& (dist < 0)) {
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= de.x1 - dx;
+				      errbox = FALSE;
+				   }
+				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_NS
+						&& (fabs(dist) < (2 * w))) {
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						&= ~STUBROUTE_NS;
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_EW;
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= de.x1 - dx;
+				      errbox = FALSE;
+				   }
+				}
+				else if (de.y2 > dt.y2) {
+				   if ((orignet & PINOBSTRUCTMASK) == 0) {
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_NS;
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= de.y2 - dy;
+				      errbox = FALSE;
+				   }
+				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_NS
+						&& (dist > 0)) {
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= de.y2 - dy;
+				      errbox = FALSE;
+				   }
+				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_EW
+						&& (fabs(dist) < (2 * w))) {
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						&= ~STUBROUTE_EW;
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_NS;
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= de.y2 - dy;
+				      errbox = FALSE;
+				   }
+				}
+				else if (de.y1 < dt.y1) {
+				   if ((orignet & PINOBSTRUCTMASK) == 0) {
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_NS;
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= de.y1 - dy;
+				      errbox = FALSE;
+				   }
+				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_NS
+						&& (dist < 0)) {
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= de.y1 - dy;
+				      errbox = FALSE;
+				   }
+				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_EW
+						&& (fabs(dist) < (2 * w))) {
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						&= ~STUBROUTE_EW;
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_NS;
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= de.y1 - dy;
+				      errbox = FALSE;
+				   }
+				}
+
+				if (errbox == TRUE)
+				   fprintf(stderr, "DRC error potential in route tap\n");
+			     }
+		         }
+		         gridy++;
+		      }
+		   }
+		   gridx++;
+		}
+	     }
+	  }
+       }
+    }
+
+} /* void adjust_stub_lengths() */
 
 /* node.c */
