@@ -668,28 +668,36 @@ void create_obstructions_from_nodes()
 				   // Otherwise, dir is left as STUBROUTE_X
 				}
 				else {
+				   float smult = 1.0;
 
 				   // Cleanly unobstructed area.  Define stub
 				   // route from point to tap, with a 1/2 route
-				   // width overlap
+				   // width overlap, more if necessary to avoid
+				   // a DRC width violation.
 
 				   if (dx >= (ds->x1 - xdist) &&
 						dx <= (ds->x2 + xdist)) {
+				      if (dx >= (ds->x2 - xdist) ||
+					  	dx <= (ds->x1 + xdist))
+					 smult = 2.0;
 				      dir = STUBROUTE_NS;
 				      if (ds->y1 > dy)
-				         dist = ds->y1 - dy + xdist;
+				         dist = ds->y1 - dy + smult * xdist;
 				      else if (ds->y2 < dy)
-				         dist = ds->y2 - dy - xdist;
+				         dist = ds->y2 - dy - smult * xdist;
 				      else
 				         dir = 0;  // Clean, no need for stub
 				   }
 				   else if (dy >= (ds->y1 - xdist) &&
 						dy <= (ds->y2 + xdist)) {
+				      if (dy >= (ds->y2 - xdist) ||
+					  	dy <= (ds->y1 + xdist))
+					 smult = 2.0;
 				      dir = STUBROUTE_EW;
 				      if (ds->x1 > dx)
-				         dist = ds->x1 - dx + xdist;
+				         dist = ds->x1 - dx + smult * xdist;
 				      else if (ds->x2 < dx)
-				         dist = ds->x2 - dx - xdist;
+				         dist = ds->x2 - dx - smult * xdist;
 				      else
 					 dir = 0;  // Clean, no need for stub
 				   }
@@ -887,15 +895,15 @@ void adjust_stub_lengths()
 			     else if (orignet & PINOBSTRUCTMASK) {
 				if (orignet & STUBROUTE_EW) {
 				   if (dist > 0)
-				      dt.x2 += dist;
+				      dt.x2 = dx + dist;
 				   else
-				      dt.x1 += dist;
+				      dt.x1 = dx + dist;
 				}
 				else if (orignet & STUBROUTE_NS) {
 				   if (dist > 0)
-				      dt.y2 += dist;
+				      dt.y2 = dy + dist;
 				   else
-				      dt.y1 += dist;
+				      dt.y1 = dy + dist;
 				}
 			     }
 			     de = dt;

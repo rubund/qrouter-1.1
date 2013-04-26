@@ -1519,6 +1519,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
    DPOINT dp1, dp2;
    float offset1, offset2;
    int stubroute = 0;
+   u_char cancel;
 
    Pathon = -1;
 
@@ -1528,6 +1529,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 	 for (rt = node->routes; rt; rt = rt->next) {
 	    if (rt->segments && !rt->output && rt->node) {
 		horizontal = FALSE;
+		cancel = FALSE;
 
 		// Check first position for terminal offsets
 		seg = (SEG)rt->segments;
@@ -1554,44 +1556,67 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		      if (dir1 == STUBROUTE_NS)
 			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
 		      y2 = (int)((dc + 1e-4) * oscale);
+		      dc = oscale * 0.5 * LefGetRouteWidth(layer);
 		      if (dir1 == STUBROUTE_EW) {
 			 horizontal = TRUE;
-			 if (special == (u_char)1) {
-			    // Special nets do not automatically include
-			    // 1/2 route width at the ends, so add these.
-			    /*
-			    dc = oscale * 0.5 * LefGetRouteWidth(layer);
+			 if (special == (u_char)0) {
+			    // Regular nets include 1/2 route width at
+			    // the ends, so subtract from the stub terminus
 			    if (x < x2) {
-			       x -= dc;
-			       x2 += dc;
+			       x2 -= dc;
+			       if (x >= x2) cancel = TRUE;
 			    }
 			    else {
-			       x += dc;
-			       x2 -= dc;
+			       x2 += dc;
+			       if (x <= x2) cancel = TRUE;
 			    }
-			    */
+			 }
+			 else {
+			    // Special nets don't include 1/2 route width
+			    // at the ends, so add to the route at the grid
+			    if (x < x2)
+			       x -= dc;
+			    else
+			       x += dc;
+
+			    // Routes that extend for more than one track
+			    // without a bend do not need a wide stub
+			    if (seg->x1 != seg->x2) cancel = TRUE;
 			 }
 		      }
 		      else {
 			 horizontal = FALSE;
-			 if (special == (u_char)1) {
-			    // Special nets do not automatically include
-			    // 1/2 route width at the ends, so add these.
-			    /*
-			    dc = oscale * 0.5 * LefGetRouteWidth(layer);
+			 if (special == (u_char)0) {
+			    // Regular nets include 1/2 route width at
+			    // the ends, so subtract from the stub terminus
 			    if (y < y2) {
-			       y -= dc;
-			       y2 += dc;
+			       y2 -= dc;
+			       if (y >= y2) cancel = TRUE;
 			    }
 			    else {
-			       y += dc;
-			       y2 -= dc;
+			       y2 += dc;
+			       if (y <= y2) cancel = TRUE;
 			    }
-			    */
+			 }
+			 else {
+			    // Special nets don't include 1/2 route width
+			    // at the ends, so add to the route at the grid
+			    if (y < y2)
+			       y -= dc;
+			    else
+			       y += dc;
+
+			    // Routes that extend for more than one track
+			    // without a bend do not need a wide stub
+			    if (seg->y1 != seg->y2) cancel = TRUE;
 			 }
 		      }
-		      pathstart(Cmd, seg->layer, x2, y2, special, oscale);
-		      pathto(Cmd, x, y, horizontal, x2, y2);
+
+
+		      if (cancel == FALSE) {
+		         pathstart(Cmd, seg->layer, x2, y2, special, oscale);
+		         pathto(Cmd, x, y, horizontal, x2, y2);
+		      }
 		      lastx = x;
 		      lasty = y;
 		   }
@@ -1724,6 +1749,11 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		      case ST_VIA:
 			 rt->output = TRUE;
 			 if (special == (u_char)0) {
+			    if (lastseg == NULL) {
+			       // Make sure last position is valid
+			       lastx = x;
+			       lasty = y;
+			    }
 			    pathvia(Cmd, layer, x, y, lastx, lasty);
 			    lastx = x;
 			    lasty = y;
@@ -1742,6 +1772,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		// Check last position for terminal offsets
 		if (lastseg && ((lastseg != saveseg)
 				|| (lastseg->segtype & ST_WIRE))) {
+		    cancel = FALSE;
 		    seg = lastseg;
 		    layer = seg->layer;
 		    dir2 = Obs[layer][OGRID(seg->x2, seg->y2, layer)];
@@ -1764,50 +1795,71 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		       if (dir2 == STUBROUTE_NS)
 			  dc += Stub[layer][OGRID(seg->x2, seg->y2, layer)];
 		       y2 = (int)((dc + 1e-4) * oscale);
+		       dc = oscale * 0.5 * LefGetRouteWidth(layer);
 		       if (dir2 == STUBROUTE_EW) {
 			  horizontal = TRUE;
-			  if (special == (u_char)1) {
-			     // Special nets do not automatically include
-			     // 1/2 route width at the ends, so add these.
-			     /*
-			     dc = oscale * 0.5 * LefGetRouteWidth(layer);
+			  if (special == (u_char)0) {
+			     // Regular nets include 1/2 route width at
+			     // the ends, so subtract from the stub terminus
 			     if (x < x2) {
-			        x -= dc;
-			        x2 += dc;
+			        x2 -= dc;
+				if (x >= x2) cancel = TRUE;
 			     }
 			     else {
-			        x += dc;
-			        x2 -= dc;
+			        x2 += dc;
+				if (x <= x2) cancel = TRUE;
 			     }
-			     */
+			  }
+			  else {
+			     // Special nets don't include 1/2 route width
+			     // at the ends, so add to the route at the grid
+			     if (x < x2)
+			        x -= dc;
+			     else
+			        x += dc;
+
+			     // Routes that extend for more than one track
+			     // without a bend do not need a wide stub
+			     if (seg->x1 != seg->x2) cancel = TRUE;
 			  }
 		       }
 		       else {
 			  horizontal = FALSE;
-			  if (special == (u_char)1) {
-			     // Special nets do not automatically include
-			     // 1/2 route width at the ends, so add these.
-			    /*
-			     dc = oscale * 0.5 * LefGetRouteWidth(layer);
+			  if (special == (u_char)0) {
+			     // Regular nets include 1/2 route width at
+			     // the ends, so subtract from the stub terminus
 			     if (y < y2) {
-			        y -= dc;
-			        y2 += dc;
+			        y2 -= dc;
+				if (y >= y2) cancel = TRUE;
 			     }
 			     else {
-			        y += dc;
-			        y2 -= dc;
+			        y2 += dc;
+				if (y <= y2) cancel = TRUE;
 			     }
-			     */
+			  }
+			  else {
+			     // Special nets don't include 1/2 route width
+			     // at the ends, so add to the route at the grid
+			     if (y < y2)
+			        y -= dc;
+			     else
+			        y += dc;
+
+			     // Routes that extend for more than one track
+			     // without a bend do not need a wide stub
+			     if (seg->y1 != seg->y2) cancel = TRUE;
 			  }
 		       }
-		       if (Pathon != 1) {
-			  pathstart(Cmd, layer, x, y, special, oscale);
-			  lastx = x;
-			  lasty = y;
+		       if (cancel == FALSE) {
+		          if (Pathon != 1) {
+			     pathstart(Cmd, layer, x, y, special, oscale);
+			     lastx = x;
+			     lasty = y;
+		          }
+		          pathto(Cmd, x2, y2, horizontal, lastx, lasty);
+		          lastx = x2;
+		          lasty = y2;
 		       }
-		       pathto(Cmd, x2, y2, horizontal, lastx, lasty);
-		       lastx = x2;
-		       lasty = y2;
 		    }
 		}
 		if (Pathon != -1) Pathon = 0;
