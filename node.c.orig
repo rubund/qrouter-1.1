@@ -638,7 +638,6 @@ void create_obstructions_from_nodes()
 			    // route position to cleanly attach to the port.
 
 			    dir = STUBROUTE_X;
-			    dist = 0.0;
 
 			    if (((k & ~PINOBSTRUCTMASK) != (u_int)node->netnum) &&
 					(n2 == NULL)) {
@@ -689,83 +688,66 @@ void create_obstructions_from_nodes()
 				   // Otherwise, dir is left as STUBROUTE_X
 				}
 				else {
+				   float smult = 1.0;
 
 				   // Cleanly unobstructed area.  Define stub
-				   // route from point to tap, with a route width
-				   // overlap if necessary to avoid a DRC width
-				   // violation.
+				   // route from point to tap, with a 1/2 route
+				   // width overlap, more if necessary to avoid
+				   // a DRC width violation.
 
-				   if ((dx >= ds->x2) &&
-					((dx - ds->x2) > (dy - ds->y2)) &&
-					((dx - ds->x2) > (ds->y1 - dy))) {
-				      // West-pointing stub
-				      if ((dy - ds->y2) <= xdist &&
-					  (ds->y1 - dy) <= xdist) {
-					 // Within reach of tap rectangle
-					 dir = STUBROUTE_EW;
-					 dist = ds->x2 - dx;
-					 if (dy < (ds->y2 - xdist) &&
-						dy > (ds->y1 + xdist)) {
-					    if (dx < ds->x2 + xdist) dist = 0.0;
+				   if (dx >= (ds->x1 - xdist) &&
+						dx <= (ds->x2 + xdist)) {
+				      if (dx >= (ds->x2 - xdist) ||
+					  	dx <= (ds->x1 + xdist))
+					 smult = 2.0;
+				      dir = STUBROUTE_NS;
+				      if (ds->y1 > dy) {
+				         if ((ds->y1 - xdist) <= dy) {
+					    if (dx < ds->x1 || dx > ds->x2)
+				               dist = ds->y1 - dy + smult * xdist;
+					    else
+					       dir = 0;
 					 }
-					 else {
-					    dist -= 2.0 * xdist;
-					 }
+					 else
+				            dist = ds->y1 - dy + smult * xdist;
 				      }
+				      else if (ds->y2 < dy) {
+				         if ((ds->y2 + xdist) >= dy) {
+					    if (dx < ds->x1 || dx > ds->x2)
+				               dist = ds->y2 - dy + smult * xdist;
+					    else
+					       dir = 0;
+					 }
+					 else
+				            dist = ds->y2 - dy - smult * xdist;
+				      }
+				      else
+				         dir = 0;  // Clean, no need for stub
 				   }
-				   else if ((dx <= ds->x1) &&
-					((ds->x1 - dx) > (dy - ds->y2)) &&
-					((ds->x1 - dx) > (ds->y1 - dy))) {
-				      // East-pointing stub
-				      if ((dy - ds->y2) <= xdist &&
-					  (ds->y1 - dy) <= xdist) {
-					 // Within reach of tap rectangle
-					 dir = STUBROUTE_EW;
-					 dist = ds->x1 - dx;
-					 if (dy < (ds->y2 - xdist) &&
-						dy > (ds->y1 + xdist)) {
-					    if (dx > ds->x1 - xdist) dist = 0.0;
-					 }
-					 else {
-					    dist += 2.0 * xdist;
-					 }
+				   else if (dy >= (ds->y1 - xdist) &&
+						dy <= (ds->y2 + xdist)) {
+				      if (dy >= (ds->y2 - xdist) ||
+					  	dy <= (ds->y1 + xdist))
+					 smult = 2.0;
+				      dir = STUBROUTE_EW;
+				      if (ds->x1 > dx) {
+				         if ((ds->x1 - xdist) <= dx) {
+					    if (dy < ds->y1 || dy > ds->y2)
+				               dist = ds->x1 - dx + smult * xdist;
+				         }
+					 else 
+				            dist = ds->x1 - dx + smult * xdist;
 				      }
-				   }
-				   else if ((dy >= ds->y2) &&
-					((dy - ds->y2) > (dx - ds->x2)) &&
-					((dy - ds->y2) > (ds->x1 - dx))) {
-				      // South-pointing stub
-				      if ((dx - ds->x2) <= xdist &&
-					  (ds->x1 - dx) <= xdist) {
-					 // Within reach of tap rectangle
-					 dir = STUBROUTE_NS;
-					 dist = ds->y2 - dy;
-					 if (dx < (ds->x2 - xdist) &&
-						dx > (ds->x1 + xdist)) {
-					    if (dy < ds->y2 + xdist) dist = 0.0;
+				      else if (ds->x2 < dx) {
+				         if ((ds->x2 + xdist) >= dx) {
+					    if (dy < ds->y1 || dy > ds->y2)
+				               dist = ds->x2 - dx - smult * xdist;
 					 }
-					 else {
-					    dist -= 2.0 * xdist;
-					 }
+					 else
+				            dist = ds->x2 - dx - smult * xdist;
 				      }
-				   }
-				   else if ((dy <= ds->y1) &&
-					((ds->y1 - dy) > (dx - ds->x2)) &&
-					((ds->y1 - dy) > (ds->x1 - dx))) {
-				      // North-pointing stub
-				      if ((dx - ds->x2) <= xdist &&
-					  (ds->x1 - dx) <= xdist) {
-					 // Within reach of tap rectangle
-					 dir = STUBROUTE_NS;
-					 dist = ds->y1 - dy;
-					 if (dx < (ds->x2 - xdist) &&
-						dx > (ds->x1 + xdist)) {
-					    if (dy > ds->y1 - xdist) dist = 0.0;
-					 }
-					 else {
-					    dist += 2.0 * xdist;
-					 }
-				      }
+				      else
+					 dir = 0;  // Clean, no need for stub
 				   }
 
 				   if (dir == STUBROUTE_X) {
@@ -1054,11 +1036,6 @@ void adjust_stub_lengths()
 				// makes contact without the stub.  Moving the stub
 				// to another side should not create an error.
 
-				// NOTE:  Changed 4/29/13;  direction of stub will
-				// be changed even though it might create an error
-				// in the other direction;  it can't do worse.
-				// But, the case should be re-run to check (to-do)
-
 				if (de.x2 > dt.x2) {
 				   if ((orignet & PINOBSTRUCTMASK) == 0) {
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -1074,8 +1051,7 @@ void adjust_stub_lengths()
 				      errbox = FALSE;
 				   }
 				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_NS
-						// && (fabs(dist) < (2 * w))
-						) {
+						&& (fabs(dist) < (2 * w))) {
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 						&= ~STUBROUTE_NS;
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -1100,8 +1076,7 @@ void adjust_stub_lengths()
 				      errbox = FALSE;
 				   }
 				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_NS
-						// && (fabs(dist) < (2 * w))
-						) {
+						&& (fabs(dist) < (2 * w))) {
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 						&= ~STUBROUTE_NS;
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -1126,8 +1101,7 @@ void adjust_stub_lengths()
 				      errbox = FALSE;
 				   }
 				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_EW
-						// && (fabs(dist) < (2 * w))
-						) {
+						&& (fabs(dist) < (2 * w))) {
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 						&= ~STUBROUTE_EW;
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -1152,8 +1126,7 @@ void adjust_stub_lengths()
 				      errbox = FALSE;
 				   }
 				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_EW
-						// && (fabs(dist) < (2 * w))
-						) {
+						&& (fabs(dist) < (2 * w))) {
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 						&= ~STUBROUTE_EW;
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -1164,9 +1137,8 @@ void adjust_stub_lengths()
 				   }
 				}
 
-				if (errbox == TRUE) {
+				if (errbox == TRUE)
 				   fprintf(stderr, "DRC error potential in route tap\n");
-				}
 			     }
 		         }
 		         gridy++;
