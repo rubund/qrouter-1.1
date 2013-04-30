@@ -1510,7 +1510,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
    ROUTE rt;
    NODE node;
    GATE g;
-   u_int dir1, dir2;
+   u_int dir1, dir2, tdir;
    int i, layer;
    int x, y, x2, y2;
    double dc;
@@ -1556,9 +1556,45 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		      if (dir1 == STUBROUTE_NS)
 			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
 		      y2 = (int)((dc + 1e-4) * oscale);
-		      dc = oscale * 0.5 * LefGetRouteWidth(layer);
 		      if (dir1 == STUBROUTE_EW) {
 			 horizontal = TRUE;
+
+			 // If the gridpoint ahead of the stub has a route
+			 // on the same net, and the stub is long enough
+			 // to come within a DRC spacing distance of the
+			 // other route, then lengthen it to close up the
+			 // distance and resolve the error.  (NOTE:  This
+			 // unnecessarily stretches routes to cover taps
+			 // that have not been routed to.  At least on the
+			 // test standard cell set, these rules remove a
+			 // handful of DRC errors and don't create any new
+			 // ones.  If necessary, a flag can be added to
+			 // distinguish routes from taps.
+
+			 if ((x < x2) && (seg->x1 < (NumChannelsX[layer] - 1))) {
+			    tdir = Obs[layer][OGRID(seg->x1 + 1, seg->y1, layer)];
+			    if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			       if (Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
+					LefGetRouteKeepout(layer) >= PitchX[layer]) {
+		      		  dc = Xlowerbound + (double)(seg->x1 + 1)
+					* PitchX[layer];
+		      		  x2 = (int)((dc + 1e-4) * oscale);
+			       }
+			    }
+			 }
+			 else if ((x > x2) && (seg->x1 > 0)) {
+			    tdir = Obs[layer][OGRID(seg->x1 - 1, seg->y1, layer)];
+			    if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			       if (-Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
+					LefGetRouteKeepout(layer) >= PitchX[layer]) {
+		      		  dc = Xlowerbound + (double)(seg->x1 - 1)
+					* PitchX[layer];
+		      		  x2 = (int)((dc + 1e-4) * oscale);
+			       }
+			    }
+			 }
+
+		         dc = oscale * 0.5 * LefGetRouteWidth(layer);
 			 if (special == (u_char)0) {
 			    // Regular nets include 1/2 route width at
 			    // the ends, so subtract from the stub terminus
@@ -1586,6 +1622,37 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		      }
 		      else {
 			 horizontal = FALSE;
+
+			 // If the gridpoint ahead of the stub has a route
+			 // on the same net, and the stub is long enough
+			 // to come within a DRC spacing distance of the
+			 // other route, then lengthen it to close up the
+			 // distance and resolve the error.
+
+			 if ((y < y2) && (seg->y1 < (NumChannelsY[layer] - 1))) {
+			    tdir = Obs[layer][OGRID(seg->x1, seg->y1 + 1, layer)];
+			    if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			       if (Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
+					LefGetRouteKeepout(layer) >= PitchY[layer]) {
+		      		  dc = Ylowerbound + (double)(seg->y1 + 1)
+					* PitchY[layer];
+		      		  y2 = (int)((dc + 1e-4) * oscale);
+			       }
+			    }
+			 }
+			 else if ((y > y2) && (seg->y1 > 0)) {
+			    tdir = Obs[layer][OGRID(seg->x1, seg->y1 - 1, layer)];
+			    if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			       if (-Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
+					LefGetRouteKeepout(layer) >= PitchY[layer]) {
+		      		  dc = Ylowerbound + (double)(seg->y1 - 1)
+					* PitchY[layer];
+		      		  y2 = (int)((dc + 1e-4) * oscale);
+			       }
+			    }
+			 }
+
+		         dc = oscale * 0.5 * LefGetRouteWidth(layer);
 			 if (special == (u_char)0) {
 			    // Regular nets include 1/2 route width at
 			    // the ends, so subtract from the stub terminus
@@ -1611,7 +1678,6 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			    if (seg->y1 != seg->y2) cancel = TRUE;
 			 }
 		      }
-
 
 		      if (cancel == FALSE) {
 		         pathstart(Cmd, seg->layer, x2, y2, special, oscale);
@@ -1795,9 +1861,39 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		       if (dir2 == STUBROUTE_NS)
 			  dc += Stub[layer][OGRID(seg->x2, seg->y2, layer)];
 		       y2 = (int)((dc + 1e-4) * oscale);
-		       dc = oscale * 0.5 * LefGetRouteWidth(layer);
 		       if (dir2 == STUBROUTE_EW) {
 			  horizontal = TRUE;
+
+			  // If the gridpoint ahead of the stub has a route
+			  // on the same net, and the stub is long enough
+			  // to come within a DRC spacing distance of the
+			  // other route, then lengthen it to close up the
+			  // distance and resolve the error.
+
+			  if ((x < x2) && (seg->x2 < (NumChannelsX[layer] - 1))) {
+			     tdir = Obs[layer][OGRID(seg->x2 + 1, seg->y2, layer)];
+			     if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			        if (Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
+					LefGetRouteKeepout(layer) >= PitchX[layer]) {
+		      		   dc = Xlowerbound + (double)(seg->x2 + 1)
+					* PitchX[layer];
+		      		   x2 = (int)((dc + 1e-4) * oscale);
+			        }
+			     }
+			  }
+			  else if ((x > x2) && (seg->x2 > 0)) {
+			     tdir = Obs[layer][OGRID(seg->x2 - 1, seg->y2, layer)];
+			     if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			        if (-Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
+					LefGetRouteKeepout(layer) >= PitchX[layer]) {
+		      		   dc = Xlowerbound + (double)(seg->x2 - 1)
+					* PitchX[layer];
+		      		   x2 = (int)((dc + 1e-4) * oscale);
+			        }
+			     }
+			  }
+
+		          dc = oscale * 0.5 * LefGetRouteWidth(layer);
 			  if (special == (u_char)0) {
 			     // Regular nets include 1/2 route width at
 			     // the ends, so subtract from the stub terminus
@@ -1825,6 +1921,37 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		       }
 		       else {
 			  horizontal = FALSE;
+
+			  // If the gridpoint ahead of the stub has a route
+			  // on the same net, and the stub is long enough
+			  // to come within a DRC spacing distance of the
+			  // other route, then lengthen it to close up the
+			  // distance and resolve the error.
+
+			  if ((y < y2) && (seg->y2 < (NumChannelsY[layer] - 1))) {
+			     tdir = Obs[layer][OGRID(seg->x2, seg->y2 + 1, layer)];
+			     if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			        if (Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
+					LefGetRouteKeepout(layer) >= PitchY[layer]) {
+		      		   dc = Ylowerbound + (double)(seg->y2 + 1)
+					* PitchY[layer];
+		      		   y2 = (int)((dc + 1e-4) * oscale);
+			        }
+			     }
+			  }
+			  else if ((y > y2) && (seg->y2 > 0)) {
+			     tdir = Obs[layer][OGRID(seg->x2, seg->y2 - 1, layer)];
+			     if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			        if (-Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
+					LefGetRouteKeepout(layer) >= PitchY[layer]) {
+		      		   dc = Ylowerbound + (double)(seg->y2 - 1)
+					* PitchY[layer];
+		      		   y2 = (int)((dc + 1e-4) * oscale);
+			        }
+			     }
+			  }
+
+		          dc = oscale * 0.5 * LefGetRouteWidth(layer);
 			  if (special == (u_char)0) {
 			     // Regular nets include 1/2 route width at
 			     // the ends, so subtract from the stub terminus

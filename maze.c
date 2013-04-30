@@ -586,6 +586,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
    u_int netnum, netobs1, netobs2, dir1, dir2;
    u_char first = (u_char)1;
    u_char dmask;
+   u_char pflags, p2flags;
    PROUTE *Pr;
    DPOINT dp;
    POINT newlr, newlr2, lrtop, lrend, lrnext, lrcur, lrprev;
@@ -692,14 +693,16 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 	       // is available.
 	       dx = cx + 1;	// Check to the right
 	       pri = &Obs2[cl][OGRID(dx, cy, cl)];
-	       if (pri->flags & PR_COST) {
-		  pri->flags &= ~PR_COST;
-		  if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+	       pflags = pri->flags;
+	       if (pflags & PR_COST) {
+		  pflags &= ~PR_COST;
+		  if ((pflags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri->prdata.cost < mincost) {
 	             pri2 = &Obs2[dl][OGRID(dx, cy, dl)];
-		     if (pri2->flags & PR_COST) {
-			pri2->flags &= ~PR_COST;
-		        if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+		     p2flags = pri2->flags;
+		     if (p2flags & PR_COST) {
+			p2flags &= ~PR_COST;
+		        if ((p2flags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri2->prdata.cost < MAXRT) {
 		           mincost = pri->prdata.cost;
 		           minx = dx;
@@ -710,14 +713,16 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 	       }
 	       dx = cx - 1;	// Check to the left
 	       pri = &Obs2[cl][OGRID(dx, cy, cl)];
-	       if (pri->flags & PR_COST) {
-		  pri->flags &= ~PR_COST;
-		  if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+	       pflags = pri->flags;
+	       if (pflags & PR_COST) {
+		  pflags &= ~PR_COST;
+		  if ((pflags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri->prdata.cost < mincost) {
 	             pri2 = &Obs2[dl][OGRID(dx, cy, dl)];
-		     if (pri2->flags & PR_COST) {
-			pri2->flags &= ~PR_COST;
-		        if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+		     p2flags = pri2->flags;
+		     if (p2flags & PR_COST) {
+			p2flags &= ~PR_COST;
+		        if ((p2flags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri2->prdata.cost < MAXRT) {
 		           mincost = pri->prdata.cost;
 		           minx = dx;
@@ -729,14 +734,16 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 
 	       dy = cy + 1;	// Check up
 	       pri = &Obs2[cl][OGRID(cx, dy, cl)];
-	       if (pri->flags & PR_COST) {
-		  pri->flags &= ~PR_COST;
-		  if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+	       pflags = pri->flags;
+	       if (pflags & PR_COST) {
+		  pflags &= ~PR_COST;
+		  if ((pflags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri->prdata.cost < mincost) {
 	             pri2 = &Obs2[dl][OGRID(cx, dy, dl)];
-		     if (pri2->flags & PR_COST) {
-			pri2->flags &= ~PR_COST;
-		        if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+		     p2flags = pri2->flags;
+		     if (p2flags & PR_COST) {
+			p2flags &= ~PR_COST;
+		        if ((p2flags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri2->prdata.cost < MAXRT) {
 		           mincost = pri->prdata.cost;
 		           minx = cx;
@@ -748,14 +755,16 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 
 	       dy = cy - 1;	// Check down
 	       pri = &Obs2[cl][OGRID(cx, dy, cl)];
-	       if (pri->flags & PR_COST) {
-		  pri->flags &= ~PR_COST;
-		  if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+	       pflags = pri->flags;
+	       if (pflags & PR_COST) {
+		  pflags &= ~PR_COST;
+		  if (pflags & PR_PRED_DMASK != PR_PRED_NONE &&
 				pri->prdata.cost < mincost) {
 	             pri2 = &Obs2[dl][OGRID(cx, dy, dl)];
-		     if (pri2->flags & PR_COST) {
-		        pri2->flags &= ~PR_COST;
-		        if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+		     p2flags = pri2->flags;
+		     if (p2flags & PR_COST) {
+		        p2flags &= ~PR_COST;
+		        if ((p2flags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri2->prdata.cost < MAXRT) {
 		           mincost = pri->prdata.cost;
 		           minx = cx;
@@ -816,14 +825,16 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 
 	          dx = cx + 1;	// Check to the right
 	          pri = &Obs2[cl][OGRID(dx, cy, cl)];
-		  if (pri->flags & PR_COST) {
-		     pri->flags &= ~PR_COST;
-		     if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+	          pflags = pri->flags;
+		  if (pflags & PR_COST) {
+		     pflags &= ~PR_COST;
+		     if ((pflags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri->prdata.cost < mincost) {
 	                pri2 = &Obs2[dl][OGRID(dx, cy, dl)];
-			if (pri2->flags & PR_COST) {
-			   pri2->flags &= ~PR_COST;
-		           if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+		        p2flags = pri2->flags;
+			if (p2flags & PR_COST) {
+			   p2flags &= ~PR_COST;
+		           if ((p2flags & PR_PRED_DMASK) != PR_PRED_NONE &&
 					pri2->prdata.cost < MAXRT) {
 		              mincost = pri->prdata.cost;
 		              minx = dx;
@@ -835,14 +846,16 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 
 	          dx = cx - 1;	// Check to the left
 	          pri = &Obs2[cl][OGRID(dx, cy, cl)];
-		  if (pri->flags & PR_COST) {
-		     pri->flags &= ~PR_COST;
-		     if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+	          pflags = pri->flags;
+		  if (pflags & PR_COST) {
+		     pflags &= ~PR_COST;
+		     if ((pflags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri->prdata.cost < mincost) {
 	                pri2 = &Obs2[dl][OGRID(dx, cy, dl)];
-			if (pri2->flags & PR_COST) {
-			   pri2->flags &= ~PR_COST;
-		           if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+		        p2flags = pri2->flags;
+			if (p2flags & PR_COST) {
+			   p2flags &= ~PR_COST;
+		           if ((p2flags & PR_PRED_DMASK) != PR_PRED_NONE &&
 					pri2->prdata.cost < MAXRT) {
 		              mincost = pri->prdata.cost;
 		              minx = dx;
@@ -854,14 +867,16 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 
 	          dy = cy + 1;	// Check up
 	          pri = &Obs2[cl][OGRID(cx, dy, cl)];
-		  if (pri->flags & PR_COST) {
-		     pri->flags &= ~PR_COST;
-		     if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+	          pflags = pri->flags;
+		  if (pflags & PR_COST) {
+		     pflags &= ~PR_COST;
+		     if ((pflags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri->prdata.cost < mincost) {
 	                pri2 = &Obs2[dl][OGRID(cx, dy, dl)];
-			if (pri2->flags & PR_COST) {
-			   pri2->flags &= ~PR_COST;
-		           if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+		        p2flags = pri2->flags;
+			if (p2flags & PR_COST) {
+			   p2flags &= ~PR_COST;
+		           if ((p2flags & PR_PRED_DMASK) != PR_PRED_NONE &&
 					pri2->prdata.cost < MAXRT) {
 		              mincost = pri->prdata.cost;
 		              minx = cx;
@@ -873,14 +888,16 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 
 	          dy = cy - 1;	// Check down
 	          pri = &Obs2[cl][OGRID(cx, dy, cl)];
-		  if (pri->flags & PR_COST) {
-		     pri->flags &= ~PR_COST;
-		     if (pri->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+	          pflags = pri->flags;
+		  if (pflags & PR_COST) {
+		     pflags &= ~PR_COST;
+		     if ((pflags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri->prdata.cost < mincost) {
 	                pri2 = &Obs2[dl][OGRID(cx, dy, dl)];
-			if (pri2->flags & PR_COST) {
-			   pri2->flags &= ~PR_COST;
-		           if (pri2->flags & PR_PRED_DMASK != PR_PRED_NONE &&
+		        p2flags = pri2->flags;
+			if (p2flags & PR_COST) {
+			   p2flags &= ~PR_COST;
+		           if ((p2flags & PR_PRED_DMASK) != PR_PRED_NONE &&
 					pri2->prdata.cost < MAXRT) {
 		              mincost = pri->prdata.cost;
 		              minx = cx;
