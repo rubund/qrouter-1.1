@@ -442,7 +442,7 @@ void create_obstructions_from_nodes()
     u_int dir, k;
     int i, gx, gy, gridx, gridy, net;
     double dx, dy, delta[MAX_LAYERS];
-    float dist;
+    float dist, xdist;
 
     for (i = 0; i < Num_layers; i++) {
 	delta[i] = LefGetRouteKeepout(i);
@@ -511,14 +511,87 @@ void create_obstructions_from_nodes()
 					= 0.0;
 			     }
 			     else if (!(orignet & NO_NET)) {
+
+				// A grid point that is within 1/2 route width
+				// of a tap rectangle corner can violate metal
+				// width rules, and so should declare a stub.
+				
+				dir = 0;
+				dist = 0.0;
+			        xdist = 0.5 * LefGetRouteWidth(ds->layer);
+
+				if (dx >= ds->x2 - xdist) {
+				   if (dy >= ds->y2 - xdist) {
+				      // Check northeast corner
+
+				      if ((ds->x2 - dx) > (ds->y2 - dy)) {
+					 // West-pointing stub
+					 dir = STUBROUTE_EW;
+					 dist = ds->x2 - dx - 2.0 * xdist;
+				      }
+				      else {
+					 // South-pointing stub
+					 dir = STUBROUTE_NS;
+					 dist = ds->y2 - dy - 2.0 * xdist;
+				      }
+
+				   }
+				   else if (dy <= ds->y1 + xdist) {
+				      // Check southeast corner
+
+				      if ((ds->x2 - dx) > (dy - ds->y1)) {
+					 // West-pointing stub
+					 dir = STUBROUTE_EW;
+					 dist = ds->x2 - dx - 2.0 * xdist;
+				      }
+				      else {
+					 // North-pointing stub
+					 dir = STUBROUTE_NS;
+					 dist = ds->y1 - dy + 2.0 * xdist;
+				      }
+				   }
+				}
+				else if (dx <= ds->x1 + xdist) {
+				   if (dy >= ds->y2 - xdist) {
+				      // Check northwest corner
+
+				      if ((dx - ds->x1) > (ds->y2 - dy)) {
+					 // East-pointing stub
+					 dir = STUBROUTE_EW;
+					 dist = ds->x1 - dx + 2.0 * xdist;
+				      }
+				      else {
+					 // South-pointing stub
+					 dir = STUBROUTE_NS;
+					 dist = ds->y2 - dy - 2.0 * xdist;
+				      }
+
+				   }
+				   else if (dy <= ds->y1 + xdist) {
+				      // Check southwest corner
+
+				      if ((dx - ds->x2) > (dy - ds->y1)) {
+					 // East-pointing stub
+					 dir = STUBROUTE_EW;
+					 dist = ds->x1 - dx + 2.0 * xdist;
+				      }
+				      else {
+					 // North-pointing stub
+					 dir = STUBROUTE_NS;
+					 dist = ds->y1 - dy + 2.0 * xdist;
+				      }
+				   }
+				}
+
 			        Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= (u_int)node->netnum;
+					= (u_int)node->netnum | dir;
 			        Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= node;
 			        Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= node;
 			        Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= 0.0;
+					= dist;
+
 			     }
 			     else if ((orignet & NO_NET) && ((orignet & OBSTRUCT_MASK)
 					!= OBSTRUCT_MASK)) {
@@ -613,7 +686,7 @@ void create_obstructions_from_nodes()
 		         if (dy > (ds->y2 + delta[ds->layer]) ||
 				gridy >= NumChannelsY[ds->layer]) break;
 		         if (dy >= (ds->y1 - delta[ds->layer]) && gridy >= 0) {
-			    float xdist = 0.5 * LefGetRouteWidth(ds->layer);
+			    xdist = 0.5 * LefGetRouteWidth(ds->layer);
 
 			    // Area inside halo around defined pin geometry.
 			    // Exclude areas already processed (areas inside

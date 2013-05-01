@@ -1079,10 +1079,10 @@ int route_segs(ROUTE rt, u_char stage)
 	      Pr = &Obs2[i][OGRID(x, y, i)];
 	      if (netnum != 0) {
 	         Pr->flags = 0;		// Clear all flags
-	         Pr->prdata.net = (netnum & ~PINOBSTRUCTMASK);
+	         Pr->prdata.net = netnum & NETNUM_MASK;
 	         dir = netnum & PINOBSTRUCTMASK;
 	         if ((dir != 0) && ((dir & STUBROUTE_X) == STUBROUTE_X)) {
-		    if ((netnum & ~PINOBSTRUCTMASK) == rt->netnum)
+		    if ((netnum & NETNUM_MASK) == rt->netnum)
 		       Pr->prdata.net = 0;	// STUBROUTE_X not routable
 	         }
 	      } else {
@@ -1573,7 +1573,8 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 
 			 if ((x < x2) && (seg->x1 < (NumChannelsX[layer] - 1))) {
 			    tdir = Obs[layer][OGRID(seg->x1 + 1, seg->y1, layer)];
-			    if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			    if ((tdir & ~PINOBSTRUCTMASK) ==
+						(node->netnum | ROUTED_NET)) {
 			       if (Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
 					LefGetRouteKeepout(layer) >= PitchX[layer]) {
 		      		  dc = Xlowerbound + (double)(seg->x1 + 1)
@@ -1584,7 +1585,8 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			 }
 			 else if ((x > x2) && (seg->x1 > 0)) {
 			    tdir = Obs[layer][OGRID(seg->x1 - 1, seg->y1, layer)];
-			    if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			    if ((tdir & ~PINOBSTRUCTMASK) ==
+						(node->netnum | ROUTED_NET)) {
 			       if (-Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
 					LefGetRouteKeepout(layer) >= PitchX[layer]) {
 		      		  dc = Xlowerbound + (double)(seg->x1 - 1)
@@ -1631,7 +1633,8 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 
 			 if ((y < y2) && (seg->y1 < (NumChannelsY[layer] - 1))) {
 			    tdir = Obs[layer][OGRID(seg->x1, seg->y1 + 1, layer)];
-			    if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			    if ((tdir & ~PINOBSTRUCTMASK) ==
+						(node->netnum | ROUTED_NET)) {
 			       if (Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
 					LefGetRouteKeepout(layer) >= PitchY[layer]) {
 		      		  dc = Ylowerbound + (double)(seg->y1 + 1)
@@ -1642,7 +1645,8 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			 }
 			 else if ((y > y2) && (seg->y1 > 0)) {
 			    tdir = Obs[layer][OGRID(seg->x1, seg->y1 - 1, layer)];
-			    if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			    if ((tdir & ~PINOBSTRUCTMASK) ==
+						(node->netnum | ROUTED_NET)) {
 			       if (-Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
 					LefGetRouteKeepout(layer) >= PitchY[layer]) {
 		      		  dc = Ylowerbound + (double)(seg->y1 - 1)
@@ -1872,7 +1876,8 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 
 			  if ((x < x2) && (seg->x2 < (NumChannelsX[layer] - 1))) {
 			     tdir = Obs[layer][OGRID(seg->x2 + 1, seg->y2, layer)];
-			     if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			     if ((tdir & ~PINOBSTRUCTMASK) ==
+						(node->netnum | ROUTED_NET)) {
 			        if (Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
 					LefGetRouteKeepout(layer) >= PitchX[layer]) {
 		      		   dc = Xlowerbound + (double)(seg->x2 + 1)
@@ -1883,7 +1888,8 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			  }
 			  else if ((x > x2) && (seg->x2 > 0)) {
 			     tdir = Obs[layer][OGRID(seg->x2 - 1, seg->y2, layer)];
-			     if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			     if ((tdir & ~PINOBSTRUCTMASK) ==
+						(node->netnum | ROUTED_NET)) {
 			        if (-Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
 					LefGetRouteKeepout(layer) >= PitchX[layer]) {
 		      		   dc = Xlowerbound + (double)(seg->x2 - 1)
@@ -1930,7 +1936,8 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 
 			  if ((y < y2) && (seg->y2 < (NumChannelsY[layer] - 1))) {
 			     tdir = Obs[layer][OGRID(seg->x2, seg->y2 + 1, layer)];
-			     if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			     if ((tdir & ~PINOBSTRUCTMASK) ==
+						(node->netnum | ROUTED_NET)) {
 			        if (Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
 					LefGetRouteKeepout(layer) >= PitchY[layer]) {
 		      		   dc = Ylowerbound + (double)(seg->y2 + 1)
@@ -1941,7 +1948,8 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			  }
 			  else if ((y > y2) && (seg->y2 > 0)) {
 			     tdir = Obs[layer][OGRID(seg->x2, seg->y2 - 1, layer)];
-			     if ((tdir & ~PINOBSTRUCTMASK) == node->netnum) {
+			     if ((tdir & ~PINOBSTRUCTMASK) ==
+						(node->netnum | ROUTED_NET)) {
 			        if (-Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
 					LefGetRouteKeepout(layer) >= PitchY[layer]) {
 		      		   dc = Ylowerbound + (double)(seg->y2 - 1)

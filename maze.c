@@ -19,6 +19,7 @@
 #include "config.h"
 #include "node.h"
 #include "maze.h"
+#include "lef.h"
 
 extern int TotalRoutes;
 
@@ -277,7 +278,7 @@ NETLIST find_colliding(NET net)
 	       // are terminals of the net.
 
 	       while (1) {
-	          orignet = Obs[lay][OGRID(x, y, lay)];
+	          orignet = Obs[lay][OGRID(x, y, lay)] & ~ROUTED_NET;
 
 	          if (orignet != net->netnum) {
 
@@ -338,11 +339,23 @@ NETLIST find_colliding(NET net)
 u_char ripup_net(NET net, u_char restore)
 {
    int thisnet, oldnet, x, y, lay, dir;
+   double sreq;
    NODE node;
    NODELIST nl;
    ROUTE rt;
    SEG seg;
    DPOINT ntap;
+   u_char needcheckX[MAX_LAYERS], needcheckY[MAX_LAYERS];
+
+   // Make a quick survey to see if we will need an extra search of
+   // the surrounding grid points for places that have been marked
+   // unroutable due to the placement of the net.
+
+   for (lay = 0; lay < Num_layers; lay++) {
+      sreq = LefGetRouteWidth(lay) + LefGetRouteSpacing(lay);
+      needcheckX[lay] = (sreq > PitchX[lay]) ? TRUE : FALSE;
+      needcheckY[lay] = (sreq > PitchY[lay]) ? TRUE : FALSE;
+   }
 
    thisnet = net->netnum;
 
@@ -356,7 +369,7 @@ u_char ripup_net(NET net, u_char restore)
 	       x = seg->x1;
 	       y = seg->y1;
 	       while (1) {
-	          oldnet = Obs[lay][OGRID(x, y, lay)] & ~PINOBSTRUCTMASK;
+	          oldnet = Obs[lay][OGRID(x, y, lay)] & NETNUM_MASK;
 	          if ((oldnet > 0) && (oldnet < Numnets)) {
 	             if (oldnet != thisnet) {
 		        fprintf(stderr, "Error: position %d %d layer %d has net "
@@ -374,7 +387,30 @@ u_char ripup_net(NET net, u_char restore)
 			if (dir == 0)
 		           Obs[lay][OGRID(x, y, lay)] = 0;
 			else
-		           Obs[lay][OGRID(x, y, lay)] = (Numnets + 1) | dir;
+		           Obs[lay][OGRID(x, y, lay)] = NO_NET | dir;
+		     }
+
+		     // Routes which had blockages added on the sides due
+		     // to spacing constraints have (NO_NET | ROUTED_NET)
+		     // set;  these flags should be removed.
+
+		     if (needcheckX[lay]) {
+		        if ((x > 0) && ((Obs[lay][OGRID(x - 1, y, lay)] &
+				(NO_NET | ROUTED_NET)) == (NO_NET | ROUTED_NET)))
+			   Obs[lay][OGRID(x - 1, y, lay)] &= ~(NO_NET | ROUTED_NET);
+		        else if ((x < NumChannelsX[lay] - 1) &&
+				((Obs[lay][OGRID(x + 1, y, lay)] &
+				(NO_NET | ROUTED_NET)) == (NO_NET | ROUTED_NET)))
+			   Obs[lay][OGRID(x + 1, y, lay)] &= ~(NO_NET | ROUTED_NET);
+		     }
+		     if (needcheckY[lay]) {
+		        if ((y > 0) && ((Obs[lay][OGRID(x, y - 1, lay)] &
+				(NO_NET | ROUTED_NET)) == (NO_NET | ROUTED_NET)))
+			   Obs[lay][OGRID(x, y - 1, lay)] &= ~(NO_NET | ROUTED_NET);
+		        else if ((y < NumChannelsY[lay] - 1) &&
+				((Obs[lay][OGRID(x, y + 1, lay)] &
+				(NO_NET | ROUTED_NET)) == (NO_NET | ROUTED_NET)))
+			   Obs[lay][OGRID(x, y + 1, lay)] &= ~(NO_NET | ROUTED_NET);
 		     }
 		  }
 
@@ -579,7 +615,7 @@ int eval_pt(GRIDP *ept, u_char flags, u_char stage)
 int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 {
    SEG  seg, lseg;
-   int  i, j, k;
+   int  i, j, k, lay;
    int  x, y;
    int  dx, dy, dl;
    NODE n1;
@@ -590,6 +626,18 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
    PROUTE *Pr;
    DPOINT dp;
    POINT newlr, newlr2, lrtop, lrend, lrnext, lrcur, lrprev;
+   u_char needblockX[MAX_LAYERS], needblockY[MAX_LAYERS];
+   double sreq;
+
+   // Make a quick survey to see if we will need an extra search of
+   // the surrounding grid points for places that have been marked
+   // unroutable due to the placement of the net.
+
+   for (lay = 0; lay < Num_layers; lay++) {
+      sreq = LefGetRouteWidth(lay) + LefGetRouteSpacing(lay);
+      needblockX[lay] = (sreq > PitchX[lay]) ? TRUE : FALSE;
+      needblockY[lay] = (sreq > PitchY[lay]) ? TRUE : FALSE;
+   }
 
    fflush(stdout);
    fprintf(stderr, "\nCommit: TotalRoutes = %d\n", TotalRoutes);
@@ -732,7 +780,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 		  }
 	       }
 
-	       dy = cy + 1;	// Check up
+	       dy = cy + 1;	// Check north
 	       pri = &Obs2[cl][OGRID(cx, dy, cl)];
 	       pflags = pri->flags;
 	       if (pflags & PR_COST) {
@@ -753,7 +801,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 		  }
 	       }
 
-	       dy = cy - 1;	// Check down
+	       dy = cy - 1;	// Check south
 	       pri = &Obs2[cl][OGRID(cx, dy, cl)];
 	       pflags = pri->flags;
 	       if (pflags & PR_COST) {
@@ -865,7 +913,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 		     }
 	          }
 
-	          dy = cy + 1;	// Check up
+	          dy = cy + 1;	// Check north
 	          pri = &Obs2[cl][OGRID(cx, dy, cl)];
 	          pflags = pri->flags;
 		  if (pflags & PR_COST) {
@@ -886,7 +934,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 		     }
 	          }
 
-	          dy = cy - 1;	// Check down
+	          dy = cy - 1;	// Check south
 	          pri = &Obs2[cl][OGRID(cx, dy, cl)];
 	          pflags = pri->flags;
 		  if (pflags & PR_COST) {
@@ -908,21 +956,35 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 	          }
 
 		  if (mincost < MAXRT) {
-	             pri = &Obs2[cl][OGRID(minx, miny, cl)];
-
 		     newlr = (POINT)malloc(sizeof(struct point_));
 		     newlr->x1 = minx;
 		     newlr->y1 = miny;
 		     newlr->layer = cl;
-
-	             pri2 = &Obs2[dl][OGRID(minx, miny, dl)];
 
 		     newlr2 = (POINT)malloc(sizeof(struct point_));
 		     newlr2->x1 = minx;
 		     newlr2->y1 = miny;
 		     newlr2->layer = dl;
 
-		     lrcur->next = newlr;
+		     // If newlr is a source or target, then make it
+		     // the endpoint, because we have just moved the
+		     // endpoint along the source or target, and the
+		     // original endpoint position is not needed.
+
+	             pri = &Obs2[cl][OGRID(minx, miny, cl)];
+	             pri2 = &Obs2[lrcur->layer][OGRID(lrcur->x1,
+					lrcur->y1, lrcur->layer)];
+		     if (((pri->flags & PR_SOURCE) && (pri2->flags & PR_SOURCE)) ||
+			 	((pri->flags & PR_TARGET) &&
+				(pri2->flags & PR_TARGET)) && (lrcur == lrtop)) {
+			lrtop = newlr;
+			lrend = newlr;
+			free(lrcur);
+			lrcur = newlr;
+		     }
+		     else
+		        lrcur->next = newlr;
+
 		     newlr->next = newlr2;
 
 		     // Check if point at pri2 is equal to position of
@@ -1022,8 +1084,10 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
       dir1 = netobs1 & PINOBSTRUCTMASK;
       dir2 = netobs2 & PINOBSTRUCTMASK;
 
-      netobs1 &= ~PINOBSTRUCTMASK;
-      netobs2 &= ~PINOBSTRUCTMASK;
+      netobs1 &= NETNUM_MASK;
+      netobs2 &= NETNUM_MASK;
+
+      netnum |= ROUTED_NET;
 
       // If Obs shows this position as an obstruction, then this was a port with
       // no taps in reach of a grid point.  This will be dealt with by moving
@@ -1031,31 +1095,66 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 
       if (stage == (u_char)0) {
          if (seg->segtype == ST_VIA) {
-	    Obs[seg->layer][OGRID(lrcur->x1, lrcur->y1, seg->layer)] = netnum;
 	    Obs[seg->layer + 1][OGRID(lrcur->x1, lrcur->y1, seg->layer + 1)] = netnum;
+	    if (needblockX[seg->layer + 1]) {
+	       if ((lrcur->x1 < (NumChannelsX[seg->layer + 1] - 1)) &&
+			(Obs[seg->layer + 1][OGRID(lrcur->x1 + 1, i, seg->layer + 1)]
+			& NETNUM_MASK) == 0)
+		  Obs[seg->layer + 1][OGRID(lrcur->x1 + 1, i, seg->layer + 1)] =
+			(NO_NET | ROUTED_NET);
+	       if ((lrcur->x1 > 0) &&
+			(Obs[seg->layer + 1][OGRID(lrcur->x1 - 1, i, seg->layer + 1)]
+			& NETNUM_MASK) == 0)
+		  Obs[seg->layer + 1][OGRID(lrcur->x1 - 1, i, seg->layer + 1)] =
+			(NO_NET | ROUTED_NET);
+	    }
+	    if (needblockY[seg->layer + 1]) {
+	       if ((lrcur->y1 < (NumChannelsY[seg->layer + 1] - 1)) &&
+			(Obs[seg->layer + 1][OGRID(i, lrcur->y1 + 1, seg->layer + 1)]
+			& NETNUM_MASK) == 0)
+		  Obs[seg->layer + 1][OGRID(i, lrcur->y1 + 1, seg->layer + 1)] =
+			(NO_NET | ROUTED_NET);
+	       if ((lrcur->y1 > 0) &&
+			(Obs[seg->layer + 1][OGRID(i, lrcur->y1 - 1, seg->layer + 1)]
+			& NETNUM_MASK) == 0)
+		  Obs[seg->layer + 1][OGRID(i, lrcur->y1 - 1, seg->layer + 1)] =
+			(NO_NET | ROUTED_NET);
+	    }
          }
-         else if (seg->segtype == ST_WIRE) {
-	    if (seg->x1 < seg->x2) {
-	       for (i = seg->x1; i <= seg->x2; i++) {
-	          Obs[lrcur->layer][OGRID(i, lrcur->y1, lrcur->layer)] = netnum;
-	       }
+
+	 for (i = seg->x1; ; i += (seg->x2 > seg->x1) ? 1 : -1) {
+	    Obs[lrcur->layer][OGRID(i, lrcur->y1, lrcur->layer)] = netnum;
+	    if (needblockY[lrcur->layer]) {
+	       if ((lrcur->y1 < (NumChannelsY[lrcur->layer] - 1)) &&
+			(Obs[lrcur->layer][OGRID(i, lrcur->y1 + 1, lrcur->layer)]
+			& NETNUM_MASK) == 0)
+		  Obs[lrcur->layer][OGRID(i, lrcur->y1 + 1, lrcur->layer)] =
+			(NO_NET | ROUTED_NET);
+	       if ((lrcur->y1 > 0) &&
+			(Obs[lrcur->layer][OGRID(i, lrcur->y1 - 1, lrcur->layer)]
+			& NETNUM_MASK) == 0)
+		  Obs[lrcur->layer][OGRID(i, lrcur->y1 - 1, lrcur->layer)] =
+			(NO_NET | ROUTED_NET);
 	    }
-	    if (seg->x1 > seg->x2) {
-	       for (i = seg->x2; i <= seg->x1; i++) {
-	          Obs[lrcur->layer][OGRID(i, lrcur->y1, lrcur->layer)] = netnum;
-	       }
+	    if (i == seg->x2) break;
+	 }
+	 for (i = seg->y1; ; i += (seg->y2 > seg->y1) ? 1 : -1) {
+	    Obs[lrcur->layer][OGRID(lrcur->x1, i, lrcur->layer)] = netnum;
+	    if (needblockX[seg->layer]) {
+	       if ((lrcur->x1 < (NumChannelsX[lrcur->layer] - 1)) &&
+			(Obs[lrcur->layer][OGRID(lrcur->x1 + 1, i, lrcur->layer)]
+			& NETNUM_MASK) == 0)
+		  Obs[lrcur->layer][OGRID(lrcur->x1 + 1, i, lrcur->layer)] =
+			(NO_NET | ROUTED_NET);
+	       if ((lrcur->x1 > 0) &&
+			(Obs[lrcur->layer][OGRID(lrcur->x1 - 1, i, lrcur->layer)]
+			& NETNUM_MASK) == 0)
+		  Obs[lrcur->layer][OGRID(lrcur->x1 - 1, i, lrcur->layer)] =
+			(NO_NET | ROUTED_NET);
 	    }
-	    if (seg->y1 < seg->y2) {
-	       for (i = seg->y1; i <= seg->y2; i++) {
-	          Obs[lrcur->layer][OGRID(lrcur->x1, i, lrcur->layer)] = netnum;
-	       }
-	    }
-	    if (seg->y1 > seg->y2) {
-	       for (i = seg->y2; i <= seg->y1; i++) {
-	          Obs[lrcur->layer][OGRID(lrcur->x1, i, lrcur->layer)] = netnum;
-	       }
-	    }
-         }
+	    if (i == seg->y2) break;
+	 }
+
          if (first && dir1) {
 	    first = (u_char)0;
 	    Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] |= dir1;

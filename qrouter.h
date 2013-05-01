@@ -258,6 +258,9 @@ struct netlist_ {
 // The OFFSET_TAP flag marks a position that is inside a terminal but
 // which needs to be adjusted in one direction to avoid a close obstruction.
 // The Stub[] vector indicates the distance needed to avoid the obstruction.
+//
+// The maximum number of nets must not overrun the area used by flags, so
+// the maximum number of nets is 0x7ffffff, or 134,217,727.
 
 #define PINOBSTRUCTMASK	((u_int)0xe0000000)  // takes values from below
 #define STUBROUTE_NS	((u_int)0x20000000)  // route north or south to reach terminal
@@ -265,6 +268,10 @@ struct netlist_ {
 #define STUBROUTE_X	((u_int)0x60000000)  // diagonal---not routable
 #define OFFSET_TAP	((u_int)0x80000000)  // position needs to be offset
 #define NO_NET		((u_int)0x10000000)  // indicates a non-routable obstruction
+#define ROUTED_NET	((u_int)0x08000000)  // indicates position occupied by a routed
+					     // net
+#define NETNUM_MASK	((u_int)0x17ffffff)  // Mask for the net number field
+					     // (includes NO_NET)
 
 // Definitions used along with the NO_NET bit.
 #define	OBSTRUCT_N	((u_int)0x00000001)  // Obstruction to the north
