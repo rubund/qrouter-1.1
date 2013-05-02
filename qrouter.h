@@ -51,12 +51,12 @@ typedef unsigned long  u_long;
 
 // define search directions
 
-#define NORTH	0
-#define SOUTH	1
-#define EAST	2
-#define WEST	3
-#define UP	4
-#define DOWN	5
+#define NORTH	(u_char)1
+#define SOUTH	(u_char)2
+#define EAST	(u_char)3
+#define WEST	(u_char)4
+#define UP	(u_char)5
+#define DOWN	(u_char)6
 
 // define a structure containing x, y, and layer
 
@@ -260,7 +260,7 @@ struct netlist_ {
 // The Stub[] vector indicates the distance needed to avoid the obstruction.
 //
 // The maximum number of nets must not overrun the area used by flags, so
-// the maximum number of nets is 0x7ffffff, or 134,217,727.
+// the maximum number of nets is 0x7fffff, or 8,388,607 nets
 
 #define PINOBSTRUCTMASK	((u_int)0xe0000000)  // takes values from below
 #define STUBROUTE_NS	((u_int)0x20000000)  // route north or south to reach terminal
@@ -268,17 +268,24 @@ struct netlist_ {
 #define STUBROUTE_X	((u_int)0x60000000)  // diagonal---not routable
 #define OFFSET_TAP	((u_int)0x80000000)  // position needs to be offset
 #define NO_NET		((u_int)0x10000000)  // indicates a non-routable obstruction
-#define ROUTED_NET	((u_int)0x08000000)  // indicates position occupied by a routed
+#define BLOCKED_N	((u_int)0x08000000)  // grid point cannot be routed from the N
+#define BLOCKED_S	((u_int)0x04000000)  // grid point cannot be routed from the S
+#define BLOCKED_E	((u_int)0x02000000)  // grid point cannot be routed from the E
+#define BLOCKED_W	((u_int)0x01000000)  // grid point cannot be routed from the W
+#define BLOCKED_MASK	((u_int)0x0f000000)
+#define ROUTED_NET	((u_int)0x00800000)  // indicates position occupied by a routed
 					     // net
-#define NETNUM_MASK	((u_int)0x17ffffff)  // Mask for the net number field
+#define NETNUM_MASK	((u_int)0x107fffff)  // Mask for the net number field
 					     // (includes NO_NET)
 
+#define MAX_NETNUMS	((u_int)0x007fffff)  // Maximum net number
+
 // Definitions used along with the NO_NET bit.
-#define	OBSTRUCT_N	((u_int)0x00000001)  // Obstruction to the north
-#define	OBSTRUCT_S	((u_int)0x00000002)  // Obstruction to the south
-#define	OBSTRUCT_E	((u_int)0x00000004)  // Obstruction to the east
-#define	OBSTRUCT_W	((u_int)0x00000008)  // Obstruction to the west
-#define OBSTRUCT_MASK	((u_int)0x0000000f)
+#define OBSTRUCT_MASK	((u_int)0x0000000f)  // Tells where obstruction is
+#define OBSTRUCT_N	((u_int)0x00000008)  // relative to the grid point.
+#define OBSTRUCT_S	((u_int)0x00000004)  // Stub[] contains distance of
+#define OBSTRUCT_E	((u_int)0x00000002)  // obstruction to grid point.
+#define OBSTRUCT_W	((u_int)0x00000001)
 #define OBS_VDD		((u_int)0x00000010)  // Obstruction is VDD network
 #define OBS_VSS		((u_int)0x00000020)  // Obstruction is VSS network
 #define POWERBUS_MASK	((u_int)0x00000030)
@@ -303,6 +310,9 @@ extern NODE   *Nodeloc[MAX_LAYERS];	// nodes are attached to grid points
 extern NODE   *Nodesav[MAX_LAYERS];	// copy of Nodeloc used for restoring
 					// Nodeloc after net rip-up
 extern DSEG  UserObs;			// user-defined obstruction layers
+
+extern u_char needblockX[MAX_LAYERS];
+extern u_char needblockY[MAX_LAYERS];
 
 extern int   Numnodes;
 extern int   Numnets;

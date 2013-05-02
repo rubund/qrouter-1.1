@@ -950,7 +950,7 @@ void adjust_stub_lengths()
     struct dseg_ dt, de;
     u_int dir, k;
     int i, gx, gy, gridx, gridy, net, orignet;
-    double dx, dy, w, s;
+    double dx, dy, w, s, dd;
     float dist;
     u_char errbox;
 
@@ -1034,31 +1034,32 @@ void adjust_stub_lengths()
 			     }
 			     else if (orignet & PINOBSTRUCTMASK) {
 				if (orignet & STUBROUTE_EW) {
-				   if (dist > 0)
+				   if (dist > 1e-4)
 				      dt.x2 = dx + dist;
 				   else
 				      dt.x1 = dx + dist;
 				}
 				else if (orignet & STUBROUTE_NS) {
-				   if (dist > 0)
+				   if (dist > 1e-4)
 				      dt.y2 = dy + dist;
 				   else
 				      dt.y1 = dy + dist;
 				}
 			     }
+
 			     de = dt;
 
 			     // check for DRC spacing interactions between
 			     // the tap box and the route box
 
-			     if ((dt.y1 - ds->y2) > 0 && (dt.y1 - ds->y2) < s) {
+			     if ((dt.y1 - ds->y2) > 1e-4 && (dt.y1 - ds->y2) < s) {
 				if (ds->x2 > (dt.x1 - s) && ds->x1 < (dt.x2 + s)) {
 				   de.y2 = dt.y1;
 				   de.y1 = ds->y2;
 				   errbox = TRUE;
 				}
 			     }
-			     else if ((ds->y1 - dt.y2) > 0 && (ds->y1 - dt.y2) < s) {
+			     else if ((ds->y1 - dt.y2) > 1e-4 && (ds->y1 - dt.y2) < s) {
 				if (ds->x2 > (dt.x1 - s) && ds->x1 < (dt.x2 + s)) {
 				   de.y1 = dt.y2;
 				   de.y2 = ds->y1;
@@ -1066,22 +1067,23 @@ void adjust_stub_lengths()
 				}
 			     }
 
-			     if ((dt.x1 - ds->x2) > 0 && (dt.x1 - ds->x2) < s) {
+			     if ((dt.x1 - ds->x2) > 1e-4 && (dt.x1 - ds->x2) < s) {
 				if (ds->y2 > (dt.y1 - s) && ds->y1 < (dt.y2 + s)) {
 				   de.x2 = dt.x1;
 				   de.x1 = ds->x2;
 				   errbox = TRUE;
 				}
 			     }
-			     else if ((ds->x1 - dt.x2) > 0 && (ds->x1 - dt.x2) < s) {
+			     else if ((ds->x1 - dt.x2) > 1e-4 && (ds->x1 - dt.x2) < s) {
 				if (ds->y2 > (dt.y1 - s) && ds->y1 < (dt.y2 + s)) {
 				   de.x1 = dt.x2;
 				   de.x2 = ds->x1;
 				   errbox = TRUE;
 				}
 			     }
-	
+
 			     if (errbox == TRUE) {
+	
 			        // Chop areas off the error box that are covered by
 			        // other taps of the same port.
 
@@ -1093,7 +1095,6 @@ void adjust_stub_lengths()
 				      errbox = FALSE;	// Completely covered
 				      break;
 				   }
-
 				   if (ds2->x1 < de.x2 && ds2->x2 > de.x1) {
 				      if (ds2->y1 < de.y2 && ds2->y2 > de.y1) {
 					 // Partial coverage
@@ -1146,9 +1147,8 @@ void adjust_stub_lengths()
 						= de.x2 - dx;
 				      errbox = FALSE;
 				   }
-				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_NS
-						// && (fabs(dist) < (2 * w))
-						) {
+				   else if ((orignet & PINOBSTRUCTMASK) ==
+						STUBROUTE_NS) {
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 						&= ~STUBROUTE_NS;
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -1172,9 +1172,8 @@ void adjust_stub_lengths()
 						= de.x1 - dx;
 				      errbox = FALSE;
 				   }
-				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_NS
-						// && (fabs(dist) < (2 * w))
-						) {
+				   else if ((orignet & PINOBSTRUCTMASK) ==
+						STUBROUTE_NS) {
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 						&= ~STUBROUTE_NS;
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -1198,9 +1197,8 @@ void adjust_stub_lengths()
 						= de.y2 - dy;
 				      errbox = FALSE;
 				   }
-				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_EW
-						// && (fabs(dist) < (2 * w))
-						) {
+				   else if ((orignet & PINOBSTRUCTMASK) ==
+						STUBROUTE_EW) {
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 						&= ~STUBROUTE_EW;
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -1224,9 +1222,8 @@ void adjust_stub_lengths()
 						= de.y1 - dy;
 				      errbox = FALSE;
 				   }
-				   else if ((orignet & PINOBSTRUCTMASK) == STUBROUTE_EW
-						// && (fabs(dist) < (2 * w))
-						) {
+				   else if ((orignet & PINOBSTRUCTMASK) ==
+						STUBROUTE_EW) {
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 						&= ~STUBROUTE_EW;
 			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -1238,7 +1235,9 @@ void adjust_stub_lengths()
 				}
 
 				if (errbox == TRUE) {
-				   fprintf(stderr, "DRC error potential in route tap\n");
+				   // Unroutable position, so mark it unroutable
+			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					|= STUBROUTE_X;
 				}
 			     }
 		         }
@@ -1253,5 +1252,242 @@ void adjust_stub_lengths()
     }
 
 } /* void adjust_stub_lengths() */
+
+/*--------------------------------------------------------------*/
+/* block_route()						*/
+/*								*/
+/*  Mark a specific length along the route tracks as unroutable	*/
+/*  by finding the grid point in the direction indicated, and	*/
+/*  setting the appropriate block bit in the Obs[] array for	*/
+/*  that position.  The original grid point is marked as	*/
+/*  unroutable in the opposite direction, for symmetry.		*/
+/*--------------------------------------------------------------*/
+
+void
+block_route(int x, int y, int lay, u_char dir)
+{
+   int bx, by, ob;
+
+   bx = x;
+   by = y;
+
+   switch (dir) {
+      case NORTH:
+	 if (y == NumChannelsY[lay] - 1) return;
+	 by = y + 1;
+	 break;
+      case SOUTH:
+	 if (y == 0) return;
+	 by = y - 1;
+	 break;
+      case EAST:
+	 if (x == NumChannelsX[lay] - 1) return;
+	 bx = x + 1;
+	 break;
+      case WEST:
+	 if (x == 0) return;
+	 bx = x - 1;
+	 break;
+   }
+   
+   ob = Obs[lay][OGRID(bx, by, lay)];
+
+   if ((ob & NO_NET) != 0) return;
+
+   switch (dir) {
+      case NORTH:
+	 Obs[lay][OGRID(bx, by, lay)] |= BLOCKED_S;
+	 Obs[lay][OGRID(x, y, lay)] |= BLOCKED_N;
+	 break;
+      case SOUTH:
+	 Obs[lay][OGRID(bx, by, lay)] |= BLOCKED_N;
+	 Obs[lay][OGRID(x, y, lay)] |= BLOCKED_S;
+	 break;
+      case EAST:
+	 Obs[lay][OGRID(bx, by, lay)] |= BLOCKED_W;
+	 Obs[lay][OGRID(x, y, lay)] |= BLOCKED_E;
+	 break;
+      case WEST:
+	 Obs[lay][OGRID(bx, by, lay)] |= BLOCKED_E;
+	 Obs[lay][OGRID(x, y, lay)] |= BLOCKED_W;
+	 break;
+   }
+}
+
+/*--------------------------------------------------------------*/
+/* find_route_blocks() ---					*/
+/*								*/
+/*	Search tap geometry for edges that cause DRC spacing	*/
+/*	errors with route edges.  This specifically checks	*/
+/*	edges of the route tracks, not the intersection points.	*/
+/*	If a tap would cause an error with a route segment,	*/
+/*	the grid points on either end of the segment are	*/
+/*	flagged to prevent generating a route along that	*/
+/*	specific segment.					*/
+/*--------------------------------------------------------------*/
+
+void
+find_route_blocks()
+{
+   NODE node;
+   GATE g;
+   // DPOINT dp;
+   DSEG ds, ds2;
+   struct dseg_ dt, de;
+   int i, gridx, gridy;
+   double dx, dy, w, v, s, u;
+   float dist;
+   u_char errbox;
+
+   for (g = Nlgates; g; g = g->next) {
+      for (i = 0; i < g->nodes; i++) {
+	 if (g->netnum[i] != 0) {
+
+	    // Get the node record associated with this pin.
+	    node = g->noderec[i];
+
+	    // Work through each rectangle in the tap geometry
+
+            for (ds = g->taps[i]; ds; ds = ds->next) {
+	       w = 0.5 * LefGetRouteWidth(ds->layer);
+	       v = 0.5 * LefGetViaWidth(ds->layer, ds->layer, 0);
+	       s = LefGetRouteSpacing(ds->layer);
+
+	       // Look west
+
+	       gridx = (int)((ds->x1 - Xlowerbound) / PitchX[ds->layer]);
+	       dx = (gridx * PitchX[ds->layer]) + Xlowerbound;
+	       dist = ds->x1 - dx - w;
+	       if (dist > 0 && dist < s && gridx >= 0) {
+		  dt.x1 = dt.x2 = dx;
+		  dt.y1 = ds->y1;
+		  dt.y2 = ds->y2;
+
+		  // Check for other taps covering this edge
+		  // (to do)
+
+		  // Find all grid points affected
+	          gridy = (int)((ds->y1 - Ylowerbound - PitchY[ds->layer]) /
+				PitchY[ds->layer]);
+	          dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
+		  while (dy < ds->y1 - s) {
+		     dy += PitchY[ds->layer];
+		     gridy++;
+		  }
+		  while (dy < ds->y2 + s) {
+		     u = ((Obs[ds->layer][OGRID(gridx, gridy, ds->layer)] &
+				PINOBSTRUCTMASK) == STUBROUTE_EW) ? v : w;
+		     if (dy + 1e-4 < ds->y2 - u)
+			block_route(gridx, gridy, ds->layer, NORTH);
+		     if (dy - 1e-4 > ds->y1 + u)
+			block_route(gridx, gridy, ds->layer, SOUTH);
+		     dy += PitchY[ds->layer];
+		     gridy++;
+		  }
+	       }
+
+	       // Look east
+
+	       gridx = (int)(1.0 + (ds->x2 - Xlowerbound) / PitchX[ds->layer]);
+	       dx = (gridx * PitchX[ds->layer]) + Xlowerbound;
+	       dist = dx - ds->x2 - w;
+	       if (dist > 0 && dist < s && gridx < NumChannelsX[ds->layer]) {
+		  dt.x1 = dt.x2 = dx;
+		  dt.y1 = ds->y1;
+		  dt.y2 = ds->y2;
+
+		  // Check for other taps covering this edge
+		  // (to do)
+
+		  // Find all grid points affected
+	          gridy = (int)((ds->y1 - Ylowerbound - PitchY[ds->layer]) /
+				PitchY[ds->layer]);
+	          dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
+		  while (dy < ds->y1 - s) {
+		     dy += PitchY[ds->layer];
+		     gridy++;
+		  }
+		  while (dy < ds->y2 + s) {
+		     u = ((Obs[ds->layer][OGRID(gridx, gridy, ds->layer)] &
+				PINOBSTRUCTMASK) == STUBROUTE_EW) ? v : w;
+		     if (dy + 1e-4 < ds->y2 - u)
+			block_route(gridx, gridy, ds->layer, NORTH);
+		     if (dy - 1e-4 > ds->y1 + u)
+			block_route(gridx, gridy, ds->layer, SOUTH);
+		     dy += PitchY[ds->layer];
+		     gridy++;
+		  }
+	       }
+
+	       // Look south
+
+	       gridy = (int)((ds->y1 - Ylowerbound) / PitchY[ds->layer]);
+	       dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
+	       dist = ds->y1 - dy - w;
+	       if (dist > 0 && dist < s && gridy >= 0) {
+		  dt.x1 = ds->x1;
+		  dt.x2 = ds->x2;
+		  dt.y1 = dt.y2 = dy;
+
+		  // Check for other taps covering this edge
+		  // (to do)
+
+		  // Find all grid points affected
+	          gridx = (int)((ds->x1 - Xlowerbound - PitchX[ds->layer]) /
+				PitchX[ds->layer]);
+	          dx = (gridx * PitchX[ds->layer]) + Xlowerbound;
+		  while (dx < ds->x1 - s) {
+		     dx += PitchX[ds->layer];
+		     gridx++;
+		  }
+		  while (dx < ds->x2 + s) {
+		     u = ((Obs[ds->layer][OGRID(gridx, gridy, ds->layer)] &
+				PINOBSTRUCTMASK) == STUBROUTE_NS) ? v : w;
+		     if (dx + 1e-4 < ds->x2 - u)
+			block_route(gridx, gridy, ds->layer, EAST);
+		     if (dx - 1e-4 > ds->x1 + u)
+			block_route(gridx, gridy, ds->layer, WEST);
+		     dx += PitchX[ds->layer];
+		     gridx++;
+		  }
+	       }
+
+	       // Look north
+
+	       gridy = (int)(1.0 + (ds->y2 - Ylowerbound) / PitchY[ds->layer]);
+	       dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
+	       dist = dy - ds->y2 - w;
+	       if (dist > 0 && dist < s && gridy < NumChannelsY[ds->layer]) {
+		  dt.x1 = ds->x1;
+		  dt.x2 = ds->x2;
+		  dt.y1 = dt.y2 = dy;
+
+		  // Check for other taps covering this edge
+		  // (to do)
+
+		  // Find all grid points affected
+	          gridx = (int)((ds->x1 - Xlowerbound - PitchX[ds->layer]) /
+				PitchX[ds->layer]);
+	          dx = (gridx * PitchX[ds->layer]) + Xlowerbound;
+		  while (dx < ds->x1 - s) {
+		     dx += PitchX[ds->layer];
+		     gridx++;
+		  }
+		  while (dx < ds->x2 + s) {
+		     u = ((Obs[ds->layer][OGRID(gridx, gridy, ds->layer)] &
+				PINOBSTRUCTMASK) == STUBROUTE_NS) ? v : w;
+		     if (dx + 1e-4 < ds->x2 - u)
+			block_route(gridx, gridy, ds->layer, EAST);
+		     if (dx - 1e-4 > ds->x1 + u)
+			block_route(gridx, gridy, ds->layer, WEST);
+		     dx += PitchX[ds->layer];
+		     gridx++;
+		  }
+	       }
+	    }
+	 }
+      }
+   }
+}
 
 /* node.c */

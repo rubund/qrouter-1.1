@@ -43,6 +43,9 @@ NODE   *Nodeloc[MAX_LAYERS]; // nodes are here. . .
 NODE   *Nodesav[MAX_LAYERS]; // . . . and here (but not to be altered)
 DSEG   UserObs;		     // user-defined obstruction layers
 
+u_char needblockX[MAX_LAYERS];
+u_char needblockY[MAX_LAYERS];
+
 int   Numnodes = 0;
 int   Numnets = 0;
 int   Numgates = 0;
@@ -87,7 +90,7 @@ main(int argc, char *argv[])
    char *dotptr, *sptr;
    char DEFfilename[256];
    char Filename[256];
-   double oscale;
+   double oscale, sreq;
 
    NET net;
     
@@ -253,6 +256,7 @@ main(int argc, char *argv[])
    create_obstructions_from_nodes();
    create_obstructions_from_variable_pitch();
    adjust_stub_lengths();
+   find_route_blocks();
 
    // Remove the Obsinfo array, which is no longer needed, and allocate
    // the Obs2 array for costing information
@@ -268,7 +272,17 @@ main(int argc, char *argv[])
       }
    }
 
-    
+   // Fill in needblockX and needblockY, which are used by commit_proute
+   // when route layers are too large for the grid size, and grid points
+   // around a route need to be marked as blocked whenever something is
+   // routed on those layers.
+
+   for (i = 0; i < Num_layers; i++) {
+      sreq = LefGetRouteWidth(i) + LefGetRouteSpacing(i);
+      needblockX[i] = (sreq > PitchX[i]) ? TRUE : FALSE;
+      needblockY[i] = (sreq > PitchY[i]) ? TRUE : FALSE;
+   }
+
    // Now we have netlist data, and can use it to get a list of nets.
 
    FailedNets = (NETLIST)NULL;
@@ -1057,13 +1071,12 @@ int route_segs(ROUTE rt, u_char stage)
   int  i, j, k, o;
   int  x, y;
   NODE n1, n2, n2save;
-  u_int netnum, dir;
+  u_int netnum, dir, forbid;
   char filename[32];
   int  dist, max, min, maxcost;
   int  thisnetnum, thisindex, index, pass;
   GRIDP best, curpt;
-  int  result;
-  int  rval;
+  int  result, rval;
   u_char first = (u_char)1;
   u_char check_order[6];
   DPOINT n1tap, n2tap;
@@ -1288,21 +1301,23 @@ int route_segs(ROUTE rt, u_char stage)
 
       // 1st optimization:  Direction of route on current layer is preferred.
       o = LefGetRouteOrientation(curpt.lay);
+      forbid = Obs[curpt.lay][OGRID(curpt.x, curpt.y, curpt.lay)] & BLOCKED_MASK;
+
       if (o == 1) {			// horizontal routes---check EAST and WEST first
-	 check_order[0] = EAST;
-	 check_order[1] = WEST;
+	 check_order[0] = (forbid & BLOCKED_E) ? 0 : EAST;
+	 check_order[1] = (forbid & BLOCKED_W) ? 0 : WEST;
 	 check_order[2] = UP;
 	 check_order[3] = DOWN;
-	 check_order[4] = NORTH;
-	 check_order[5] = SOUTH;
+	 check_order[4] = (forbid & BLOCKED_N) ? 0 : NORTH;
+	 check_order[5] = (forbid & BLOCKED_S) ? 0 : SOUTH;
       }
       else {				// vertical routes---check NORTH and SOUTH first
-	 check_order[0] = NORTH;
-	 check_order[1] = SOUTH;
+	 check_order[0] = (forbid & BLOCKED_N) ? 0 : NORTH;
+	 check_order[1] = (forbid & BLOCKED_S) ? 0 : SOUTH;
 	 check_order[2] = UP;
 	 check_order[3] = DOWN;
-	 check_order[4] = EAST;
-	 check_order[5] = WEST;
+	 check_order[4] = (forbid & BLOCKED_E) ? 0 : EAST;
+	 check_order[5] = (forbid & BLOCKED_W) ? 0 : WEST;
       }
 
       min = MAXRT;

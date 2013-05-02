@@ -1709,6 +1709,10 @@ DefRead(char *inName)
 		token = LefNextToken(f, TRUE);
 		if (sscanf(token, "%d", &total) != 1) total = 0;
 		LefEndStatement(f);
+		if (total > MAX_NETNUMS) {
+		   LefError("Number of nets in design (%d) exceeds maximum (%d)\n",
+				total, MAX_NETNUMS);
+		}
 		DefReadNets(f, sections[DEF_NETS], oscale, FALSE, total);
 		break;
 	    case DEF_IOTIMINGS:

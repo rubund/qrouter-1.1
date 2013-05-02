@@ -52,6 +52,10 @@ route (any viable route) quickly is the key to
 setting a bound on cost early and prevent
 multiple passes over many points.
 
+Added code for detailed analysis of port
+geometry and taking steps necessary to avoid
+generating DRC errors.
+
 ----------------------------------------------
 Compilation & installation:
 ----------------------------------------------
@@ -175,13 +179,7 @@ Development to do:
    preference to the route layers with the widest
    track pitch.
 
-5. Specialnet stub routes need to be pruned down
-   to just via-to-terminal stubs, but ultimately
-   there will have to be some very careful
-   analysis of the geometry of a pin tap to
-   avoid DRC errors.
-
-6. Need a command-line switch to disable the
+5. Need a command-line switch to disable the
    specialnets section.
 
 -------------------------------------------------
