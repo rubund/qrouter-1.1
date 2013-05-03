@@ -214,7 +214,7 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
 		}
 
 		// Process top part of via
-		if (seg->segtype && ST_VIA) {
+		if (seg->segtype & ST_VIA) {
 		   if (lay != seg->layer) break;
 		   lay++;
 		   continue;
