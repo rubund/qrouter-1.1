@@ -213,6 +213,13 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
 		   result = set_node_to_net(n2, newflags, pushlist, bbox, stage);
 		}
 
+		// Process top part of via
+		if (seg->segtype && ST_VIA) {
+		   if (lay != seg->layer) break;
+		   lay++;
+		   continue;
+		}
+
 		// Move to next grid position in segment
 		if (x == seg->x2 && y == seg->y2) break;
 		if (seg->x2 > seg->x1) x++;
