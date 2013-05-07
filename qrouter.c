@@ -30,7 +30,6 @@ STRING  DontRoute;      // a list of nets not to route (e.g., power)
 STRING  CriticalNet;    // list of critical nets to route first
 GATE    GateInfo;       // standard cell macro information
 GATE    Nlgates;	// gate instance information
-NODE    Nlnodes;	// information about gate terminals (pins)
 NETLIST FailedNets;	// list of nets that failed to route
 NETLIST Abandoned;	// list of nets that will never route
 
@@ -46,7 +45,6 @@ DSEG   UserObs;		     // user-defined obstruction layers
 u_char needblockX[MAX_LAYERS];
 u_char needblockY[MAX_LAYERS];
 
-int   Numnodes = 0;
 int   Numnets = 0;
 int   Numgates = 0;
 int   Numpins = 0;
@@ -60,15 +58,73 @@ void openFailFile()
 {
    Failfptr = fopen("failed", "w");
    if (!Failfptr) {
-      fprintf(stderr, "Could not open file \"failed\"\n");
+      fprintf(stderr, "Warning: Could not open file \"failed\"\n");
    }
 
    CNfptr = fopen("cn", "w");
    if (!CNfptr) {
-      fprintf(stderr, "Could not open file \"cn\".\n" );
+      fprintf(stderr, "Warning: Could not open file \"cn\".\n" );
    }
 }
     
+/*--------------------------------------------------------------*/
+/* Check track pitch and set the number of channels (may be	*/
+/* called from DefRead)						*/
+/*--------------------------------------------------------------*/
+
+int set_num_channels()
+{
+   int i;
+
+   if (NumChannelsX[0] != 0) return;	/* Already been called */
+
+   for (i = 0; i < Num_layers; i++) {
+      if (PitchX[i] == 0.0 || PitchY[i] == 0.0) {
+	 fprintf(stderr, "Have a 0 pitch for layer %d (of %d).  "
+			"Exit.\n", i + 1, Num_layers);
+	 return (-3);
+      }
+      NumChannelsX[i] = (int)(1.5 + (Xupperbound - Xlowerbound) / PitchX[i]);
+      NumChannelsY[i] = (int)(1.5 + (Yupperbound - Ylowerbound) / PitchY[i]);
+      printf("Number of x channels for layer %d is %d\n",
+		i, NumChannelsX[i]);
+      printf("Number of y channels for layer %d is %d\n",
+		i, NumChannelsY[i]);
+	
+      if (NumChannelsX[i] <= 0) {
+	 fprintf(stderr, "Something wrong with layer %d x bounds.\n", i);
+	 return(-3);
+      }
+      if (NumChannelsY[i] <= 0) {
+	 fprintf(stderr, "Something wrong with layer %d y bounds.\n", i);
+	 return(-3);
+      }
+      fflush(stdout);
+   }
+   return 0;
+}
+
+/*--------------------------------------------------------------*/
+/* Allocate the Obs[] array (may be called from DefRead)	*/
+/*--------------------------------------------------------------*/
+
+int allocate_obs_array()
+{
+   int i;
+
+   if (Obs[0] != NULL) return;	/* Already been called */
+
+   for (i = 0; i < Num_layers; i++) {
+      Obs[i] = (u_int *)calloc(NumChannelsX[i] * NumChannelsY[i],
+			sizeof(u_int));
+      if (!Obs[i]) {
+	 fprintf(stderr, "Out of memory 4.\n");
+	 return(4);
+      }
+   }
+   return 0;
+}
+
 /*--------------------------------------------------------------*/
 /* main - program entry point, parse command line		*/
 /*								*/
@@ -80,7 +136,7 @@ void openFailFile()
 int
 main(int argc, char *argv[])
 {
-   int	i, j;
+   int	i, j, result;
    int length, width;
    FILE *l, *configFILEptr, *fptr;
    u_int u;
@@ -171,31 +227,18 @@ main(int argc, char *argv[])
       exit(1);
    }
 
+   Obs[0] = (u_int *)NULL;
+   NumChannelsX[0] = 0;	// This is so we can check if NumChannelsX/Y were
+			// set from within DefRead() due to reading in
+			// existing nets.
+
    oscale = (double)DefRead(DEFfilename);
    create_netorder();
 
+   set_num_channels();		// If not called from DefRead()
+   allocate_obs_array();	// If not called from DefRead()
+
    for (i = 0; i < Num_layers; i++) {
-      if (PitchX[i] == 0.0 || PitchY[i] == 0.0) {
-	 fprintf(stderr, "Have a 0 pitch for layer %d (of %d).  "
-			"Exit.\n", i + 1, Num_layers);
-	 exit(-3);
-      }
-      NumChannelsX[i] = (int)(1.5 + (Xupperbound - Xlowerbound) / PitchX[i]);
-      NumChannelsY[i] = (int)(1.5 + (Yupperbound - Ylowerbound) / PitchY[i]);
-      printf("Number of x channels for layer %d is %d\n",
-		i, NumChannelsX[i]);
-      printf("Number of y channels for layer %d is %d\n",
-		i, NumChannelsY[i]);
-	
-      if (NumChannelsX[i] <= 0) {
-	 fprintf(stderr, "Something wrong with layer %d x bounds.\n", i);
-	 exit(-3);
-      }
-      if (NumChannelsY[i] <= 0) {
-	 fprintf(stderr, "Something wrong with layer %d y bounds.\n", i);
-	 exit(-3);
-      }
-      fflush(stdout);
 
       /*
       Mask[i] = (u_char *)calloc(NumChannelsX[i] * NumChannelsY[i],
@@ -205,13 +248,6 @@ main(int argc, char *argv[])
 	 exit(3);
       }
       */
-
-      Obs[i] = (u_int *)calloc(NumChannelsX[i] * NumChannelsY[i],
-			sizeof(u_int));
-      if (!Obs[i]) {
-	 fprintf(stderr, "Out of memory 4.\n");
-	 exit(4);
-      }
 
       Obsinfo[i] = (float *)calloc(NumChannelsX[i] * NumChannelsY[i],
 			sizeof(float));
@@ -288,8 +324,8 @@ main(int argc, char *argv[])
    FailedNets = (NETLIST)NULL;
    Abandoned = (NETLIST)NULL;
    fflush(stdout);
-   fprintf(stderr, "Numnets = %d, Numnodes = %d, Numpins = %d\n",
-	     Numnets - MIN_NET_NUMBER, Numnodes, Numpins );
+   fprintf(stderr, "Numnets = %d, Numpins = %d\n",
+	     Numnets - MIN_NET_NUMBER, Numpins );
 
    // print_nlgates( "net.details" );
    // print_nodes( "nodes.details" );
@@ -755,7 +791,6 @@ dosecondstage()
 void createMask(NET net)
 {
   NODE n1, n2;
-  NODELIST n;
   int i, j, o, l;
   DPOINT dtap, d1tap, d2tap, mintap;
   int dx, dy, dist, mindist;
@@ -766,8 +801,8 @@ void createMask(NET net)
 
   if (net->numnodes == 2) { 
 
-     n1 = (NODE)net->netnodes->node;
-     n2 = (NODE)net->netnodes->next->node;
+     n1 = (NODE)net->netnodes;
+     n2 = (NODE)net->netnodes->next;
      mindist = MAXRT;
 
      // Simple 2-pass---pick up first tap on n1, find closest tap on n2,
@@ -851,8 +886,7 @@ void createMask(NET net)
      xcent = ycent = 0;
      xmax = ymax = -(MAXRT);
      xmin = ymin = MAXRT;
-     for (n = net->netnodes; n != NULL; n = n->next) {
-	n1 = n->node;
+     for (n1 = net->netnodes; n1 != NULL; n1 = n1->next) {
 	dtap = (n1->taps == NULL) ? n1->extend : n1->taps;
 	xcent += dtap->gridx;
 	ycent += dtap->gridy;
@@ -875,8 +909,7 @@ void createMask(NET net)
      }
 
      // Allow routes at all tap and extension points
-     for (n = net->netnodes; n != NULL; n = n->next) {
-	n1 = n->node;
+     for (n1 = net->netnodes; n1 != NULL; n1 = n1->next) {
         for (dtap = n1->taps; dtap != NULL; dtap = dtap->next)
 	   Mask[dtap->layer][OGRID(dtap->gridx, dtap->gridy, dtap->layer)] = (u_char)1;
         for (dtap = n1->extend; dtap != NULL; dtap = dtap->next)
@@ -892,8 +925,7 @@ void createMask(NET net)
 	         Mask[l][OGRID(i, j, l)] = (u_char)1;
 	}
 	else {
-           for (n = net->netnodes; n != NULL; n = n->next) {
-	      n1 = n->node;
+           for (n1 = net->netnodes; n1 != NULL; n1 = n1->next) {
 	      dtap = (n1->taps == NULL) ? n1->extend : n1->taps;
 	      if (o == 1) {	// Horizontal trunk, vertical branches
                  for (i = dtap->gridx - 1; i <= dtap->gridx + 1; i++) {
@@ -1000,18 +1032,16 @@ int doroute(NET net, u_char stage)
 
   CurNet = net;				// Global, used by 2nd stage
 
-  n1 = (NODE)(net->netnodes->node);	// Start with the first node
   while (1) {	// Keep going until we are unable to route to a terminal
 
      TotalRoutes++;
 
      rt1 = createemptyroute();
      rt1->netnum = net->netnum;
-     rt1->node = n1;
 
      if (Verbose > 0) {
         fprintf(stdout,"doroute(): added net %d path start %d\n", 
-	       n1->netnum, n1->nodenum);
+	       net->netnum, net->netnodes->nodenum);
      }
 
      // TO-DO:  When failing to route a node, we need to check if (1) all nodes
@@ -1020,21 +1050,20 @@ int doroute(NET net, u_char stage)
      // a large and critical net may not get routed at all because one of the
      // first legs wouldn't route.
 
-     result = route_segs(rt1, stage);
+     result = route_segs(net, rt1, stage);
 
-     if ((result == 0) || (rt1->node == NULL)) {
+     if ((result == 0) || (n1 == NULL)) {
         // Nodes already routed, nothing to do
 	free(rt1);
 	return 0;
      }
-     n1 = rt1->node;
 
-     if (n1->routes) {
-        for (lrt = n1->routes; lrt->next; lrt = lrt->next);
+     if (net->routes) {
+        for (lrt = net->routes; lrt->next; lrt = lrt->next);
 	lrt->next = rt1;
      }
      else {
-	n1->routes = rt1;
+	net->routes = rt1;
      }
 
      if (result < 0) {		// Route failure.
@@ -1062,10 +1091,9 @@ int doroute(NET net, u_char stage)
 /*   AUTHOR and DATE: steve beccue      Fri Aug 8		*/
 /*--------------------------------------------------------------*/
 
-int route_segs(ROUTE rt, u_char stage)
+int route_segs(NET net, ROUTE rt, u_char stage)
 {
   POINT gpoint, glist, gunproc;
-  NET  net;
   SEG  seg;
   struct seg_ bbox;
   int  i, j, k, o;
@@ -1081,6 +1109,8 @@ int route_segs(ROUTE rt, u_char stage)
   u_char check_order[6];
   DPOINT n1tap, n2tap;
   PROUTE *Pr;
+
+  n1 = net->netnodes;
 
   // Make Obs2[][] a copy of Obs[][].  Convert pin obstructions to
   // terminal positions for the net being routed.
@@ -1115,7 +1145,6 @@ int route_segs(ROUTE rt, u_char stage)
   // We start at the node referenced by the route structure, and flag all
   // of its taps as PR_SOURCE, as well as all connected routes.
 
-  n1 = rt->node;
   bbox.x2 = bbox.y2 = 0;
   bbox.x1 = NumChannelsX[0];
   bbox.y1 = NumChannelsY[0];
@@ -1126,13 +1155,19 @@ int route_segs(ROUTE rt, u_char stage)
      return -1;
   }
 
+  // Set associated routes to PR_SOURCE
+  rval = set_routes_to_net(net, PR_SOURCE, &glist, &bbox, stage);
+
+  if (rval == -2) {
+     printf("Node of net %s has no tap points---unable to route!\n", net->netname);
+     return -1;
+  }
+
   // Now search for all other nodes on the same net that have not yet been
   // routed, and flag all of their taps as PR_TARGET
 
   result = 0;
-  for (n2 = Nlnodes; n2; n2 = n2->next) {
-     if (n2 == n1) continue;
-     if (n2->netnum != n1->netnum) continue;
+  for (n2 = n1->next; n2; n2 = n2->next) {
      rval = set_node_to_net(n2, PR_TARGET, NULL, &bbox, stage);
      if (rval == 0) {
 	n2save = n2;
@@ -1492,7 +1527,6 @@ ROUTE createemptyroute()
   rt = (ROUTE)calloc(1, sizeof(struct route_));
   rt->netnum = 0;
   rt->segments = (SEG)NULL;
-  rt->node = (NODE)NULL;
   rt->output = FALSE;
   rt->next = (ROUTE)NULL;
   return rt;
@@ -1523,8 +1557,6 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 {
    SEG seg, saveseg, lastseg;
    ROUTE rt;
-   NODE node;
-   GATE g;
    u_int dir1, dir2, tdir;
    int i, layer;
    int x, y, x2, y2;
@@ -1539,490 +1571,486 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
    Pathon = -1;
 
    /* Insert routed net here */
-   for (node = Nlnodes; node; node = node->next) {
-      if (node->netnum == net->netnum) {
-	 for (rt = node->routes; rt; rt = rt->next) {
-	    if (rt->segments && !rt->output && rt->node) {
-		horizontal = FALSE;
-		cancel = FALSE;
+   for (rt = net->routes; rt; rt = rt->next) {
+      if (rt->segments && !rt->output) {
+	 horizontal = FALSE;
+	 cancel = FALSE;
 
-		// Check first position for terminal offsets
-		seg = (SEG)rt->segments;
-		lastseg = saveseg = seg;
-		layer = seg->layer;
-		if (seg) {
-		   dir1 = Obs[layer][OGRID(seg->x1, seg->y1, layer)];
-		   dir1 &= PINOBSTRUCTMASK;
-		   if (dir1 && !(seg->segtype & ST_OFFSET_START)) {
-		      stubroute = 1;
-		      if (special == (u_char)0)
-		         fprintf(stdout, "Stub route distance %g to terminal"
+	 // Check first position for terminal offsets
+	 seg = (SEG)rt->segments;
+	 lastseg = saveseg = seg;
+	 layer = seg->layer;
+	 if (seg) {
+	    dir1 = Obs[layer][OGRID(seg->x1, seg->y1, layer)];
+	    dir1 &= PINOBSTRUCTMASK;
+	    if (dir1 && !(seg->segtype & ST_OFFSET_START)) {
+	       stubroute = 1;
+	       if (special == (u_char)0)
+		  fprintf(stdout, "Stub route distance %g to terminal"
 				" at %d %d (%d)\n",
 				Stub[layer][OGRID(seg->x1, seg->y1, layer)],
 				seg->x1, seg->y1, layer);
 
-		      dc = Xlowerbound + (double)seg->x1 * PitchX[layer];
-		      x = (int)((dc + 1e-4) * oscale);
-		      if (dir1 == STUBROUTE_EW)
-			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
-		      x2 = (int)((dc + 1e-4) * oscale);
-		      dc = Ylowerbound + (double)seg->y1 * PitchY[layer];
-		      y = (int)((dc + 1e-4) * oscale);
-		      if (dir1 == STUBROUTE_NS)
-			 dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
-		      y2 = (int)((dc + 1e-4) * oscale);
-		      if (dir1 == STUBROUTE_EW) {
-			 horizontal = TRUE;
+	       dc = Xlowerbound + (double)seg->x1 * PitchX[layer];
+	       x = (int)((dc + 1e-4) * oscale);
+	       if (dir1 == STUBROUTE_EW)
+		  dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
+	       x2 = (int)((dc + 1e-4) * oscale);
+	       dc = Ylowerbound + (double)seg->y1 * PitchY[layer];
+	       y = (int)((dc + 1e-4) * oscale);
+	       if (dir1 == STUBROUTE_NS)
+		  dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
+	       y2 = (int)((dc + 1e-4) * oscale);
+	       if (dir1 == STUBROUTE_EW) {
+		  horizontal = TRUE;
 
-			 // If the gridpoint ahead of the stub has a route
-			 // on the same net, and the stub is long enough
-			 // to come within a DRC spacing distance of the
-			 // other route, then lengthen it to close up the
-			 // distance and resolve the error.  (NOTE:  This
-			 // unnecessarily stretches routes to cover taps
-			 // that have not been routed to.  At least on the
-			 // test standard cell set, these rules remove a
-			 // handful of DRC errors and don't create any new
-			 // ones.  If necessary, a flag can be added to
-			 // distinguish routes from taps.
+		  // If the gridpoint ahead of the stub has a route
+		  // on the same net, and the stub is long enough
+		  // to come within a DRC spacing distance of the
+		  // other route, then lengthen it to close up the
+		  // distance and resolve the error.  (NOTE:  This
+		  // unnecessarily stretches routes to cover taps
+		  // that have not been routed to.  At least on the
+		  // test standard cell set, these rules remove a
+		  // handful of DRC errors and don't create any new
+		  // ones.  If necessary, a flag can be added to
+		  // distinguish routes from taps.
 
-			 if ((x < x2) && (seg->x1 < (NumChannelsX[layer] - 1))) {
-			    tdir = Obs[layer][OGRID(seg->x1 + 1, seg->y1, layer)];
-			    if ((tdir & ~PINOBSTRUCTMASK) ==
-						(node->netnum | ROUTED_NET)) {
-			       if (Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
+		  if ((x < x2) && (seg->x1 < (NumChannelsX[layer] - 1))) {
+		     tdir = Obs[layer][OGRID(seg->x1 + 1, seg->y1, layer)];
+		     if ((tdir & ~PINOBSTRUCTMASK) ==
+					(net->netnum | ROUTED_NET)) {
+			if (Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
 					LefGetRouteKeepout(layer) >= PitchX[layer]) {
-		      		  dc = Xlowerbound + (double)(seg->x1 + 1)
+		      	   dc = Xlowerbound + (double)(seg->x1 + 1)
 					* PitchX[layer];
-		      		  x2 = (int)((dc + 1e-4) * oscale);
-			       }
-			    }
-			 }
-			 else if ((x > x2) && (seg->x1 > 0)) {
-			    tdir = Obs[layer][OGRID(seg->x1 - 1, seg->y1, layer)];
-			    if ((tdir & ~PINOBSTRUCTMASK) ==
-						(node->netnum | ROUTED_NET)) {
-			       if (-Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
+		      	   x2 = (int)((dc + 1e-4) * oscale);
+			}
+		     }
+		  }
+		  else if ((x > x2) && (seg->x1 > 0)) {
+		     tdir = Obs[layer][OGRID(seg->x1 - 1, seg->y1, layer)];
+		     if ((tdir & ~PINOBSTRUCTMASK) ==
+					(net->netnum | ROUTED_NET)) {
+			if (-Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
 					LefGetRouteKeepout(layer) >= PitchX[layer]) {
-		      		  dc = Xlowerbound + (double)(seg->x1 - 1)
+		      	   dc = Xlowerbound + (double)(seg->x1 - 1)
 					* PitchX[layer];
-		      		  x2 = (int)((dc + 1e-4) * oscale);
-			       }
-			    }
-			 }
+		      	   x2 = (int)((dc + 1e-4) * oscale);
+			}
+		     }
+		  }
 
-		         dc = oscale * 0.5 * LefGetRouteWidth(layer);
-			 if (special == (u_char)0) {
-			    // Regular nets include 1/2 route width at
-			    // the ends, so subtract from the stub terminus
-			    if (x < x2) {
-			       x2 -= dc;
-			       if (x >= x2) cancel = TRUE;
-			    }
-			    else {
-			       x2 += dc;
-			       if (x <= x2) cancel = TRUE;
-			    }
-			 }
-			 else {
-			    // Special nets don't include 1/2 route width
-			    // at the ends, so add to the route at the grid
-			    if (x < x2)
-			       x -= dc;
-			    else
-			       x += dc;
+		  dc = oscale * 0.5 * LefGetRouteWidth(layer);
+		  if (special == (u_char)0) {
+		     // Regular nets include 1/2 route width at
+		     // the ends, so subtract from the stub terminus
+		     if (x < x2) {
+			x2 -= dc;
+			if (x >= x2) cancel = TRUE;
+		     }
+		     else {
+			x2 += dc;
+			if (x <= x2) cancel = TRUE;
+		     }
+		  }
+		  else {
+		     // Special nets don't include 1/2 route width
+		     // at the ends, so add to the route at the grid
+		     if (x < x2)
+			x -= dc;
+		     else
+			x += dc;
 
-			    // Routes that extend for more than one track
-			    // without a bend do not need a wide stub
-			    if (seg->x1 != seg->x2) cancel = TRUE;
-			 }
-		      }
-		      else {
-			 horizontal = FALSE;
+		     // Routes that extend for more than one track
+		     // without a bend do not need a wide stub
+		     if (seg->x1 != seg->x2) cancel = TRUE;
+	  	  }
+	       }
+	       else {
+		  horizontal = FALSE;
 
-			 // If the gridpoint ahead of the stub has a route
-			 // on the same net, and the stub is long enough
-			 // to come within a DRC spacing distance of the
-			 // other route, then lengthen it to close up the
-			 // distance and resolve the error.
+		  // If the gridpoint ahead of the stub has a route
+		  // on the same net, and the stub is long enough
+		  // to come within a DRC spacing distance of the
+		  // other route, then lengthen it to close up the
+		  // distance and resolve the error.
 
-			 if ((y < y2) && (seg->y1 < (NumChannelsY[layer] - 1))) {
-			    tdir = Obs[layer][OGRID(seg->x1, seg->y1 + 1, layer)];
-			    if ((tdir & ~PINOBSTRUCTMASK) ==
-						(node->netnum | ROUTED_NET)) {
-			       if (Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
+		  if ((y < y2) && (seg->y1 < (NumChannelsY[layer] - 1))) {
+		     tdir = Obs[layer][OGRID(seg->x1, seg->y1 + 1, layer)];
+		     if ((tdir & ~PINOBSTRUCTMASK) ==
+						(net->netnum | ROUTED_NET)) {
+			if (Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
 					LefGetRouteKeepout(layer) >= PitchY[layer]) {
-		      		  dc = Ylowerbound + (double)(seg->y1 + 1)
+		      	   dc = Ylowerbound + (double)(seg->y1 + 1)
 					* PitchY[layer];
-		      		  y2 = (int)((dc + 1e-4) * oscale);
-			       }
-			    }
-			 }
-			 else if ((y > y2) && (seg->y1 > 0)) {
-			    tdir = Obs[layer][OGRID(seg->x1, seg->y1 - 1, layer)];
-			    if ((tdir & ~PINOBSTRUCTMASK) ==
-						(node->netnum | ROUTED_NET)) {
-			       if (-Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
+		      	   y2 = (int)((dc + 1e-4) * oscale);
+			}
+		     }
+		  }
+		  else if ((y > y2) && (seg->y1 > 0)) {
+		     tdir = Obs[layer][OGRID(seg->x1, seg->y1 - 1, layer)];
+		     if ((tdir & ~PINOBSTRUCTMASK) ==
+						(net->netnum | ROUTED_NET)) {
+			if (-Stub[layer][OGRID(seg->x1, seg->y1, layer)] +
 					LefGetRouteKeepout(layer) >= PitchY[layer]) {
-		      		  dc = Ylowerbound + (double)(seg->y1 - 1)
+		      	   dc = Ylowerbound + (double)(seg->y1 - 1)
 					* PitchY[layer];
-		      		  y2 = (int)((dc + 1e-4) * oscale);
-			       }
-			    }
-			 }
+		      	   y2 = (int)((dc + 1e-4) * oscale);
+			}
+		     }
+		  }
 
-		         dc = oscale * 0.5 * LefGetRouteWidth(layer);
-			 if (special == (u_char)0) {
-			    // Regular nets include 1/2 route width at
-			    // the ends, so subtract from the stub terminus
-			    if (y < y2) {
-			       y2 -= dc;
-			       if (y >= y2) cancel = TRUE;
-			    }
-			    else {
-			       y2 += dc;
-			       if (y <= y2) cancel = TRUE;
-			    }
-			 }
-			 else {
-			    // Special nets don't include 1/2 route width
-			    // at the ends, so add to the route at the grid
-			    if (y < y2)
-			       y -= dc;
-			    else
-			       y += dc;
+		  dc = oscale * 0.5 * LefGetRouteWidth(layer);
+		  if (special == (u_char)0) {
+		     // Regular nets include 1/2 route width at
+		     // the ends, so subtract from the stub terminus
+		     if (y < y2) {
+			y2 -= dc;
+			if (y >= y2) cancel = TRUE;
+		     }
+		     else {
+			y2 += dc;
+			if (y <= y2) cancel = TRUE;
+		     }
+		  }
+		  else {
+		     // Special nets don't include 1/2 route width
+		     // at the ends, so add to the route at the grid
+		     if (y < y2)
+			y -= dc;
+		     else
+			y += dc;
 
-			    // Routes that extend for more than one track
-			    // without a bend do not need a wide stub
-			    if (seg->y1 != seg->y2) cancel = TRUE;
-			 }
-		      }
+		     // Routes that extend for more than one track
+		     // without a bend do not need a wide stub
+		     if (seg->y1 != seg->y2) cancel = TRUE;
+		  }
+	       }
 
-		      if (cancel == FALSE) {
-		         pathstart(Cmd, seg->layer, x2, y2, special, oscale);
-		         pathto(Cmd, x, y, horizontal, x2, y2);
-		      }
-		      lastx = x;
-		      lasty = y;
-		   }
-		}
+	       if (cancel == FALSE) {
+		  pathstart(Cmd, seg->layer, x2, y2, special, oscale);
+		  pathto(Cmd, x, y, horizontal, x2, y2);
+	       }
+	       lastx = x;
+	       lasty = y;
+	    }
+	 }
 
-		lastseg = NULL;
-		for (seg = rt->segments; seg; seg = seg->next) {
-		   layer = seg->layer;
+	 lastseg = NULL;
+	 for (seg = rt->segments; seg; seg = seg->next) {
+	    layer = seg->layer;
 
-		   // Check for offset terminals at either point
+	    // Check for offset terminals at either point
 
-		   offset1 = 0.0;
-		   offset2 = 0.0;
-		   dir1 = 0;
-		   dir2 = 0;
+	    offset1 = 0.0;
+	    offset2 = 0.0;
+	    dir1 = 0;
+	    dir2 = 0;
 
-		   if (seg->segtype & ST_OFFSET_START) {
-		      dir1 = Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] &
+	    if (seg->segtype & ST_OFFSET_START) {
+	       dir1 = Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] &
 				PINOBSTRUCTMASK;
-		      if (dir1 == 0 && lastseg) {
-		         dir1 = Obs[lastseg->layer][OGRID(lastseg->x2, lastseg->y2,
+	       if (dir1 == 0 && lastseg) {
+		  dir1 = Obs[lastseg->layer][OGRID(lastseg->x2, lastseg->y2,
 					lastseg->layer)] & PINOBSTRUCTMASK;
-		         offset1 = Stub[lastseg->layer][OGRID(lastseg->x2,
+		  offset1 = Stub[lastseg->layer][OGRID(lastseg->x2,
 					lastseg->y2, lastseg->layer)];
-		      }
-		      else
-		         offset1 = Stub[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)];
+	       }
+	       else
+		  offset1 = Stub[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)];
 
-		      // Additional offset for vias vs. plain route layer
-		      if (seg->segtype & ST_VIA) {
-			 if (offset1 < 0)
-			    offset1 -= (LefGetViaWidth(seg->layer, seg->layer, 0)
+	       // Additional offset for vias vs. plain route layer
+	       if (seg->segtype & ST_VIA) {
+		  if (offset1 < 0)
+		     offset1 -= (LefGetViaWidth(seg->layer, seg->layer, 0)
 					- LefGetRouteWidth(seg->layer));
-			 else if (offset1 > 0)
-			    offset1 += (LefGetViaWidth(seg->layer, seg->layer, 0)
+		  else if (offset1 > 0)
+		     offset1 += (LefGetViaWidth(seg->layer, seg->layer, 0)
 					- LefGetRouteWidth(seg->layer));
-		      }
+	       }
 
-		      if (special == (u_char)0) {
-			 if (seg->segtype & ST_VIA)
-		            fprintf(stdout, "Offset terminal distance %g to grid"
+	       if (special == (u_char)0) {
+		  if (seg->segtype & ST_VIA)
+		     fprintf(stdout, "Offset terminal distance %g to grid"
 					" at %d %d (%d)\n", offset1,
 					seg->x1, seg->y1, layer);
-		      }
-		   }
-		   if (seg->segtype & ST_OFFSET_END) {
-		      dir2 = Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] &
+	       }
+	    }
+	    if (seg->segtype & ST_OFFSET_END) {
+	       dir2 = Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] &
 				PINOBSTRUCTMASK;
-		      if (dir2 == 0 && seg->next) {
-		         dir2 = Obs[seg->next->layer][OGRID(seg->next->x1,
+	       if (dir2 == 0 && seg->next) {
+		  dir2 = Obs[seg->next->layer][OGRID(seg->next->x1,
 					seg->next->y1, seg->next->layer)] &
 					PINOBSTRUCTMASK;
-		         offset2 = Stub[seg->next->layer][OGRID(seg->next->x1,
+		  offset2 = Stub[seg->next->layer][OGRID(seg->next->x1,
 					seg->next->y1, seg->next->layer)];
-		      }
-		      else
-		         offset2 = Stub[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)];
+	       }
+	       else
+		  offset2 = Stub[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)];
 
-		      // Additional offset for vias vs. plain route layer
-		      if (seg->segtype & ST_VIA) {
-			 if (offset2 < 0)
-			    offset2 -= (LefGetViaWidth(seg->layer, seg->layer, 0)
+	       // Additional offset for vias vs. plain route layer
+	       if (seg->segtype & ST_VIA) {
+		  if (offset2 < 0)
+		     offset2 -= (LefGetViaWidth(seg->layer, seg->layer, 0)
 					- LefGetRouteWidth(seg->layer));
-			 else if (offset2 > 0)
-			    offset2 += (LefGetViaWidth(seg->layer, seg->layer, 0)
+		  else if (offset2 > 0)
+		     offset2 += (LefGetViaWidth(seg->layer, seg->layer, 0)
 					- LefGetRouteWidth(seg->layer));
-		      }
+	       }
 
-		      if (special == (u_char)0) {
-			 if ((seg->segtype & ST_VIA)
+	       if (special == (u_char)0) {
+		  if ((seg->segtype & ST_VIA)
 					&& !(seg->segtype & ST_OFFSET_START))
-		            fprintf(stdout, "Offset terminal distance %g to grid"
+		     fprintf(stdout, "Offset terminal distance %g to grid"
 					" at %d %d (%d)\n", offset2,
 					seg->x2, seg->y2, layer);
-		      }
-		   }
+	       }
+	    }
 
-		   // To do: pick up route layer name from lefInfo.
-		   // At the moment, technology names don't even match,
-		   // and are redundant between CIFLayer[] from the
-		   // config file and lefInfo.
+	    // To do: pick up route layer name from lefInfo.
+	    // At the moment, technology names don't even match,
+	    // and are redundant between CIFLayer[] from the
+	    // config file and lefInfo.
 
-		   dc = Xlowerbound + (double)seg->x1 * PitchX[layer];
-		   if (dir1 == (STUBROUTE_EW | OFFSET_TAP)) dc += offset1;
-		   x = (int)((dc + 1e-4) * oscale);
-		   dc = Ylowerbound + (double)seg->y1 * PitchY[layer];
-		   if (dir1 == (STUBROUTE_NS | OFFSET_TAP)) dc += offset1;
-		   y = (int)((dc + 1e-4) * oscale);
-		   dc = Xlowerbound + (double)seg->x2 * PitchX[layer];
-		   if (dir2 == (STUBROUTE_EW | OFFSET_TAP)) dc += offset2;
-		   x2 = (int)((dc + 1e-4) * oscale);
-		   dc = Ylowerbound + (double)seg->y2 * PitchY[layer];
-		   if (dir2 == (STUBROUTE_NS | OFFSET_TAP)) dc += offset2;
-		   y2 = (int)((dc + 1e-4) * oscale);
-		   switch (seg->segtype & ~(ST_OFFSET_START | ST_OFFSET_END)) {
-		      case ST_WIRE:
-			 if (Pathon != 1) {	// 1st point of route seg
-			    if (special == (u_char)0) {
-			       pathstart(Cmd, seg->layer, x, y, (u_char)0, oscale);
-			       lastx = x;
-			       lasty = y;
-			    }
-			    if (x == x2) {
-				horizontal = FALSE;
-			    }
-			    else if (y == y2) {
-				horizontal = TRUE;
-			    }
-			    else {
-				fprintf(stderr, "Warning:  non-"
+	    dc = Xlowerbound + (double)seg->x1 * PitchX[layer];
+	    if (dir1 == (STUBROUTE_EW | OFFSET_TAP)) dc += offset1;
+	    x = (int)((dc + 1e-4) * oscale);
+	    dc = Ylowerbound + (double)seg->y1 * PitchY[layer];
+	    if (dir1 == (STUBROUTE_NS | OFFSET_TAP)) dc += offset1;
+	    y = (int)((dc + 1e-4) * oscale);
+	    dc = Xlowerbound + (double)seg->x2 * PitchX[layer];
+	    if (dir2 == (STUBROUTE_EW | OFFSET_TAP)) dc += offset2;
+	    x2 = (int)((dc + 1e-4) * oscale);
+	    dc = Ylowerbound + (double)seg->y2 * PitchY[layer];
+	    if (dir2 == (STUBROUTE_NS | OFFSET_TAP)) dc += offset2;
+	    y2 = (int)((dc + 1e-4) * oscale);
+	    switch (seg->segtype & ~(ST_OFFSET_START | ST_OFFSET_END)) {
+	       case ST_WIRE:
+		  if (Pathon != 1) {	// 1st point of route seg
+		     if (special == (u_char)0) {
+			pathstart(Cmd, seg->layer, x, y, (u_char)0, oscale);
+			lastx = x;
+			lasty = y;
+		     }
+		     if (x == x2) {
+			horizontal = FALSE;
+		     }
+		     else if (y == y2) {
+			horizontal = TRUE;
+		     }
+		     else {
+			fprintf(stderr, "Warning:  non-"
 					"Manhattan wire in route\n");
-			    }
-			 }
-			 rt->output = TRUE;
-			 if (horizontal && x == x2) {
-			    horizontal = FALSE;
-			 }
-			 if ((!horizontal) && y == y2) {
-			    horizontal = TRUE;
-			 }
-			 if (!(x == x2) && !(y == y2)) {
-			    horizontal = FALSE;
-			 }
-			 if (special == (u_char)0) {
-			    pathto(Cmd, x2, y2, horizontal, lastx, lasty);
-			    lastx = x2;
-			    lasty = y2;
-			 }
-			 break;
-		      case ST_VIA:
-			 rt->output = TRUE;
-			 if (special == (u_char)0) {
-			    if (lastseg == NULL) {
-			       // Make sure last position is valid
-			       lastx = x;
-			       lasty = y;
-			    }
-			    pathvia(Cmd, layer, x, y, lastx, lasty);
-			    lastx = x;
-			    lasty = y;
-			 }
-			 break;
-		      default:
-			 break;
-		   }
-		   lastseg = seg;
-		}
+		     }
+		  }
+		  rt->output = TRUE;
+		  if (horizontal && x == x2) {
+		     horizontal = FALSE;
+		  }
+		  if ((!horizontal) && y == y2) {
+		     horizontal = TRUE;
+		  }
+		  if (!(x == x2) && !(y == y2)) {
+		     horizontal = FALSE;
+		  }
+		  if (special == (u_char)0) {
+		     pathto(Cmd, x2, y2, horizontal, lastx, lasty);
+		     lastx = x2;
+		     lasty = y2;
+		  }
+		  break;
+	       case ST_VIA:
+		  rt->output = TRUE;
+		  if (special == (u_char)0) {
+		     if (lastseg == NULL) {
+			// Make sure last position is valid
+			lastx = x;
+			lasty = y;
+		     }
+		     pathvia(Cmd, layer, x, y, lastx, lasty);
+		     lastx = x;
+		     lasty = y;
+		  }
+		  break;
+	       default:
+		  break;
+	    }
+	    lastseg = seg;
+	 }
 
-		// For stub routes, reset the path between terminals, since
-		// the stubs are not connected.
-		if (special == (u_char)1 && Pathon != -1) Pathon = 0;
+	 // For stub routes, reset the path between terminals, since
+	 // the stubs are not connected.
+	 if (special == (u_char)1 && Pathon != -1) Pathon = 0;
 
-		// Check last position for terminal offsets
-		if (lastseg && ((lastseg != saveseg)
+	 // Check last position for terminal offsets
+	 if (lastseg && ((lastseg != saveseg)
 				|| (lastseg->segtype & ST_WIRE))) {
-		    cancel = FALSE;
-		    seg = lastseg;
-		    layer = seg->layer;
-		    dir2 = Obs[layer][OGRID(seg->x2, seg->y2, layer)];
-		    dir2 &= PINOBSTRUCTMASK;
-		    if (dir2 && !(seg->segtype & ST_OFFSET_END)) {
-		       stubroute = 1;
-		       if (special == (u_char)0)
-			  fprintf(stdout, "Stub route distance %g to terminal"
+	     cancel = FALSE;
+	     seg = lastseg;
+	     layer = seg->layer;
+	     dir2 = Obs[layer][OGRID(seg->x2, seg->y2, layer)];
+	     dir2 &= PINOBSTRUCTMASK;
+	     if (dir2 && !(seg->segtype & ST_OFFSET_END)) {
+		stubroute = 1;
+		if (special == (u_char)0)
+		   fprintf(stdout, "Stub route distance %g to terminal"
 				" at %d %d (%d)\n",
 				Stub[layer][OGRID(seg->x2, seg->y2, layer)],
 				seg->x2, seg->y2, layer);
 
-		       dc = Xlowerbound + (double)seg->x2 * PitchX[layer];
-		       x = (int)((dc + 1e-4) * oscale);
-		       if (dir2 == STUBROUTE_EW)
-			  dc += Stub[layer][OGRID(seg->x2, seg->y2, layer)];
-		       x2 = (int)((dc + 1e-4) * oscale);
-		       dc = Ylowerbound + (double)seg->y2 * PitchY[layer];
-		       y = (int)((dc + 1e-4) * oscale);
-		       if (dir2 == STUBROUTE_NS)
-			  dc += Stub[layer][OGRID(seg->x2, seg->y2, layer)];
-		       y2 = (int)((dc + 1e-4) * oscale);
-		       if (dir2 == STUBROUTE_EW) {
-			  horizontal = TRUE;
+		dc = Xlowerbound + (double)seg->x2 * PitchX[layer];
+		x = (int)((dc + 1e-4) * oscale);
+		if (dir2 == STUBROUTE_EW)
+		   dc += Stub[layer][OGRID(seg->x2, seg->y2, layer)];
+		x2 = (int)((dc + 1e-4) * oscale);
+		dc = Ylowerbound + (double)seg->y2 * PitchY[layer];
+		y = (int)((dc + 1e-4) * oscale);
+		if (dir2 == STUBROUTE_NS)
+		   dc += Stub[layer][OGRID(seg->x2, seg->y2, layer)];
+		y2 = (int)((dc + 1e-4) * oscale);
+		if (dir2 == STUBROUTE_EW) {
+		   horizontal = TRUE;
 
-			  // If the gridpoint ahead of the stub has a route
-			  // on the same net, and the stub is long enough
-			  // to come within a DRC spacing distance of the
-			  // other route, then lengthen it to close up the
-			  // distance and resolve the error.
+		   // If the gridpoint ahead of the stub has a route
+		   // on the same net, and the stub is long enough
+		   // to come within a DRC spacing distance of the
+		   // other route, then lengthen it to close up the
+		   // distance and resolve the error.
 
-			  if ((x < x2) && (seg->x2 < (NumChannelsX[layer] - 1))) {
-			     tdir = Obs[layer][OGRID(seg->x2 + 1, seg->y2, layer)];
-			     if ((tdir & ~PINOBSTRUCTMASK) ==
-						(node->netnum | ROUTED_NET)) {
-			        if (Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
+		   if ((x < x2) && (seg->x2 < (NumChannelsX[layer] - 1))) {
+		      tdir = Obs[layer][OGRID(seg->x2 + 1, seg->y2, layer)];
+		      if ((tdir & ~PINOBSTRUCTMASK) ==
+						(net->netnum | ROUTED_NET)) {
+			 if (Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
 					LefGetRouteKeepout(layer) >= PitchX[layer]) {
-		      		   dc = Xlowerbound + (double)(seg->x2 + 1)
+		      	    dc = Xlowerbound + (double)(seg->x2 + 1)
 					* PitchX[layer];
-		      		   x2 = (int)((dc + 1e-4) * oscale);
-			        }
-			     }
-			  }
-			  else if ((x > x2) && (seg->x2 > 0)) {
-			     tdir = Obs[layer][OGRID(seg->x2 - 1, seg->y2, layer)];
-			     if ((tdir & ~PINOBSTRUCTMASK) ==
-						(node->netnum | ROUTED_NET)) {
-			        if (-Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
+		      	    x2 = (int)((dc + 1e-4) * oscale);
+			 }
+		      }
+		   }
+		   else if ((x > x2) && (seg->x2 > 0)) {
+		      tdir = Obs[layer][OGRID(seg->x2 - 1, seg->y2, layer)];
+		      if ((tdir & ~PINOBSTRUCTMASK) ==
+						(net->netnum | ROUTED_NET)) {
+			 if (-Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
 					LefGetRouteKeepout(layer) >= PitchX[layer]) {
-		      		   dc = Xlowerbound + (double)(seg->x2 - 1)
+		      	    dc = Xlowerbound + (double)(seg->x2 - 1)
 					* PitchX[layer];
-		      		   x2 = (int)((dc + 1e-4) * oscale);
-			        }
-			     }
-			  }
+		      	    x2 = (int)((dc + 1e-4) * oscale);
+			 }
+		      }
+		   }
 
-		          dc = oscale * 0.5 * LefGetRouteWidth(layer);
-			  if (special == (u_char)0) {
-			     // Regular nets include 1/2 route width at
-			     // the ends, so subtract from the stub terminus
-			     if (x < x2) {
-			        x2 -= dc;
-				if (x >= x2) cancel = TRUE;
-			     }
-			     else {
-			        x2 += dc;
-				if (x <= x2) cancel = TRUE;
-			     }
-			  }
-			  else {
-			     // Special nets don't include 1/2 route width
-			     // at the ends, so add to the route at the grid
-			     if (x < x2)
-			        x -= dc;
-			     else
-			        x += dc;
+		   dc = oscale * 0.5 * LefGetRouteWidth(layer);
+		   if (special == (u_char)0) {
+		      // Regular nets include 1/2 route width at
+		      // the ends, so subtract from the stub terminus
+		      if (x < x2) {
+			 x2 -= dc;
+			 if (x >= x2) cancel = TRUE;
+		      }
+		      else {
+			 x2 += dc;
+			 if (x <= x2) cancel = TRUE;
+		      }
+		   }
+		   else {
+		      // Special nets don't include 1/2 route width
+		      // at the ends, so add to the route at the grid
+		      if (x < x2)
+			 x -= dc;
+		      else
+			 x += dc;
 
-			     // Routes that extend for more than one track
-			     // without a bend do not need a wide stub
-			     if (seg->x1 != seg->x2) cancel = TRUE;
-			  }
-		       }
-		       else {
-			  horizontal = FALSE;
-
-			  // If the gridpoint ahead of the stub has a route
-			  // on the same net, and the stub is long enough
-			  // to come within a DRC spacing distance of the
-			  // other route, then lengthen it to close up the
-			  // distance and resolve the error.
-
-			  if ((y < y2) && (seg->y2 < (NumChannelsY[layer] - 1))) {
-			     tdir = Obs[layer][OGRID(seg->x2, seg->y2 + 1, layer)];
-			     if ((tdir & ~PINOBSTRUCTMASK) ==
-						(node->netnum | ROUTED_NET)) {
-			        if (Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
-					LefGetRouteKeepout(layer) >= PitchY[layer]) {
-		      		   dc = Ylowerbound + (double)(seg->y2 + 1)
-					* PitchY[layer];
-		      		   y2 = (int)((dc + 1e-4) * oscale);
-			        }
-			     }
-			  }
-			  else if ((y > y2) && (seg->y2 > 0)) {
-			     tdir = Obs[layer][OGRID(seg->x2, seg->y2 - 1, layer)];
-			     if ((tdir & ~PINOBSTRUCTMASK) ==
-						(node->netnum | ROUTED_NET)) {
-			        if (-Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
-					LefGetRouteKeepout(layer) >= PitchY[layer]) {
-		      		   dc = Ylowerbound + (double)(seg->y2 - 1)
-					* PitchY[layer];
-		      		   y2 = (int)((dc + 1e-4) * oscale);
-			        }
-			     }
-			  }
-
-		          dc = oscale * 0.5 * LefGetRouteWidth(layer);
-			  if (special == (u_char)0) {
-			     // Regular nets include 1/2 route width at
-			     // the ends, so subtract from the stub terminus
-			     if (y < y2) {
-			        y2 -= dc;
-				if (y >= y2) cancel = TRUE;
-			     }
-			     else {
-			        y2 += dc;
-				if (y <= y2) cancel = TRUE;
-			     }
-			  }
-			  else {
-			     // Special nets don't include 1/2 route width
-			     // at the ends, so add to the route at the grid
-			     if (y < y2)
-			        y -= dc;
-			     else
-			        y += dc;
-
-			     // Routes that extend for more than one track
-			     // without a bend do not need a wide stub
-			     if (seg->y1 != seg->y2) cancel = TRUE;
-			  }
-		       }
-		       if (cancel == FALSE) {
-		          if (Pathon != 1) {
-			     pathstart(Cmd, layer, x, y, special, oscale);
-			     lastx = x;
-			     lasty = y;
-		          }
-		          pathto(Cmd, x2, y2, horizontal, lastx, lasty);
-		          lastx = x2;
-		          lasty = y2;
-		       }
-		    }
+		      // Routes that extend for more than one track
+		      // without a bend do not need a wide stub
+		      if (seg->x1 != seg->x2) cancel = TRUE;
+		   }
 		}
-		if (Pathon != -1) Pathon = 0;
+		else {
+		   horizontal = FALSE;
 
-	    } // if (rt->segments && !rt->output)
+		   // If the gridpoint ahead of the stub has a route
+		   // on the same net, and the stub is long enough
+		   // to come within a DRC spacing distance of the
+		   // other route, then lengthen it to close up the
+		   // distance and resolve the error.
+
+		   if ((y < y2) && (seg->y2 < (NumChannelsY[layer] - 1))) {
+		      tdir = Obs[layer][OGRID(seg->x2, seg->y2 + 1, layer)];
+		      if ((tdir & ~PINOBSTRUCTMASK) ==
+						(net->netnum | ROUTED_NET)) {
+			 if (Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
+					LefGetRouteKeepout(layer) >= PitchY[layer]) {
+		      	    dc = Ylowerbound + (double)(seg->y2 + 1)
+					* PitchY[layer];
+		      	    y2 = (int)((dc + 1e-4) * oscale);
+			 }
+		      }
+		   }
+		   else if ((y > y2) && (seg->y2 > 0)) {
+		      tdir = Obs[layer][OGRID(seg->x2, seg->y2 - 1, layer)];
+		      if ((tdir & ~PINOBSTRUCTMASK) ==
+						(net->netnum | ROUTED_NET)) {
+			 if (-Stub[layer][OGRID(seg->x2, seg->y2, layer)] +
+					LefGetRouteKeepout(layer) >= PitchY[layer]) {
+		      	    dc = Ylowerbound + (double)(seg->y2 - 1)
+					* PitchY[layer];
+		      	    y2 = (int)((dc + 1e-4) * oscale);
+			 }
+		      }
+		   }
+
+		   dc = oscale * 0.5 * LefGetRouteWidth(layer);
+		   if (special == (u_char)0) {
+		      // Regular nets include 1/2 route width at
+		      // the ends, so subtract from the stub terminus
+		      if (y < y2) {
+			 y2 -= dc;
+			 if (y >= y2) cancel = TRUE;
+		      }
+		      else {
+			 y2 += dc;
+			 if (y <= y2) cancel = TRUE;
+		      }
+		   }
+		   else {
+		      // Special nets don't include 1/2 route width
+		      // at the ends, so add to the route at the grid
+		      if (y < y2)
+			 y -= dc;
+		      else
+			 y += dc;
+
+		      // Routes that extend for more than one track
+		      // without a bend do not need a wide stub
+		      if (seg->y1 != seg->y2) cancel = TRUE;
+		   }
+		}
+		if (cancel == FALSE) {
+		   if (Pathon != 1) {
+		      pathstart(Cmd, layer, x, y, special, oscale);
+		      lastx = x;
+		      lasty = y;
+		   }
+		   pathto(Cmd, x2, y2, horizontal, lastx, lasty);
+		   lastx = x2;
+		   lasty = y2;
+		}
+	    }
 	 }
-      } // if (node->routes)
+	 if (Pathon != -1) Pathon = 0;
+
+      } // if (rt->segments && !rt->output)
    }
    return stubroute;
 }
 
 /*--------------------------------------------------------------*/
-/* emit_routes - DEF file output from the Nlnodes list		*/
+/* emit_routes - DEF file output from the list of routes	*/
 /*								*/
 /*  Reads the <project>.def file and rewrites file		*/
 /*  <project>_route.def, where each net definition has the	*/
@@ -2041,7 +2069,6 @@ void emit_routes(char *filename, double oscale)
     char line[MAXLINE + 1], *lptr;
     char netname[MAX_NAME_LEN];
     NET net;
-    NODE node;
     ROUTE rt;
     char newDEFfile[256];
     FILE *fdef;
@@ -2081,10 +2108,10 @@ void emit_routes(char *filename, double oscale)
        fputs(line, Cmd);
     }
     fputs(line, Cmd);	// Write the NETS line
-    if (numnets != (Numnets - MIN_NET_NUMBER - 1)) {
+    if (numnets != (Numnets - MIN_NET_NUMBER)) {
 	fflush(stdout);
         fprintf(stderr, "emit_routes():  DEF file has %d nets, but we want"
-		" to write %d\n", numnets, Numnets - MIN_NET_NUMBER - 1);
+		" to write %d\n", numnets, Numnets - MIN_NET_NUMBER);
 	if (numnets > Numnets) numnets = Numnets;
     }
 
@@ -2103,8 +2130,28 @@ void emit_routes(char *filename, double oscale)
 		lptr++;
                 while (isspace(*lptr)) lptr++;
 	        sscanf(lptr, "%s", netname);
+		fputs(line, Cmd);
 	     }
-	     fputs(line, Cmd);
+	     else if (*lptr == '+') {
+		lptr++;
+                while (isspace(*lptr)) lptr++;
+		if (!strncmp(lptr, "ROUTED", 6)) {
+		   // This net is being handled by qrouter, so remove
+		   // the original routing information
+		   while (fgets(line, MAXLINE, fdef) != NULL) {
+		      if ((lptr = strchr(line, ';')) != NULL) {
+			 *lptr = '\n';
+			 *(lptr + 1) = '\0';
+			 break;
+		      }
+		   }
+		   break;
+		}
+		else
+		   fputs(line, Cmd);
+	     }
+	     else
+		fputs(line, Cmd);
 	  }
        }
 
@@ -2147,8 +2194,8 @@ void emit_routes(char *filename, double oscale)
     if (stubroute > 0) {
 
        /* Reset "output" records on routes, for next pass */
-       for (node = Nlnodes; node; node = node->next)
-	  for (rt = node->routes; rt; rt = rt->next)
+       for (net = Nlnets; net; net = net->next)
+	  for (rt = net->routes; rt; rt = rt->next)
 	     rt->output = 0;
 
        fprintf(Cmd, "\nSPECIALNETS %d ;\n", stubroute);

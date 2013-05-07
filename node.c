@@ -79,6 +79,7 @@ void print_nodes(char *filename)
 {
   FILE *o;
   int i;
+  NET net;
   NODE node;
   DPOINT dp;
 
@@ -92,20 +93,22 @@ void print_nodes(char *filename)
 	return;
     }
 
-    for (node = Nlnodes; node; node = node->next) {
-	dp = (DPOINT)node->taps;
-	fprintf(o, "%d\t%s\t(%g,%g)(%d,%d) :%d:num=%d netnum=%d\n",
+    for (net = Nlnets; net; net = net->next) {
+       for (node = net->netnodes; node; node = node->next) {
+	  dp = (DPOINT)node->taps;
+	  fprintf(o, "%d\t%s\t(%g,%g)(%d,%d) :%d:num=%d netnum=%d\n",
 		node->nodenum, 
 		node->netname,
 		// legacy:  print only the first point
 		dp->x, dp->y, dp->gridx, dp->gridy,
 		node->netnum, node->numnodes, node->netnum );
 		 
-	/* need to print the routes to this node (deprecated)
-	for (i = 0 ; i < g->nodes; i++) {
-	    fprintf(o, "%s(%g,%g) ", g->node[i], *(g->x[i]), *(g->y[i]));
-	}
-	*/
+	  /* need to print the routes to this node (deprecated)
+	  for (i = 0 ; i < g->nodes; i++) {
+	      fprintf(o, "%s(%g,%g) ", g->node[i], *(g->x[i]), *(g->y[i]));
+	  }
+	  */
+       }
     }
     fclose(o);
 
@@ -123,7 +126,7 @@ void print_nlnets( char *filename )
 {
   FILE *o;
   int i;
-  NODELIST nl;
+  NODE nd;
   NET net;
 
     if (!strcmp(filename, "stdout")) {
@@ -140,12 +143,12 @@ void print_nlnets( char *filename )
 	fprintf(o, "%d\t#=%d\t%s   \t\n", net->netnum, 
 		 net->numnodes, net->netname);
 
-	for (nl = net->netnodes; nl; nl = nl->next) {
-	   fprintf(o, "%d ", nl->node->nodenum);
+	for (nd = net->netnodes; nd; nd = nd->next) {
+	   fprintf(o, "%d ", nd->nodenum);
 	}
     }
 
-    fprintf(o, "%d nets and %d nodes\n", Numnets, Numnodes);
+    fprintf(o, "%d nets\n", Numnets);
     fflush(o);
 
 } /* void print_nlnets() */

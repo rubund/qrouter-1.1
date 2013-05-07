@@ -164,7 +164,6 @@ typedef struct node_ *NODE;
 struct route_ {
   ROUTE next;
   int   netnum;
-  NODE  node;		// pointer to any node connected by this route
   SEG   segments;
   int   output;         // 0 if not output, 1 if already output
                         // prevents duplicate output
@@ -177,7 +176,6 @@ struct node_ {
   DPOINT  extend;		   // point position within halo of the tap
   char    *netname;   		   // name of net this node belongs to
   int     netnum;                  // number of net this node belongs to
-  ROUTE   routes;		   // routes for this node
   int     numnodes;		   // number of nodes on this net
 };
 
@@ -209,15 +207,6 @@ struct gate_ {
     int gatenum;                    // just an integer refering to this instance
 };
 
-// The list of nodes per net
-
-typedef struct nodelist_ *NODELIST;
-
-struct nodelist_ {
-   NODELIST next;
-   NODE node;
-};
-
 // Structure for a network to be routed
 
 typedef struct net_ *NET;
@@ -227,7 +216,7 @@ struct net_ {
    NET  next;
    int  netnum;		// a unique number for this net
    char *netname;
-   NODELIST netnodes;	// list of nodes connected to the net
+   NODE netnodes;	// list of nodes connected to the net
    int  numnodes;	// number of nodes connected to the net
    u_char flags;	// flags for this net (see below)
    int  netorder;	// to be assigned by route strategy (critical
@@ -235,6 +224,7 @@ struct net_ {
    NETLIST noripup;	// list of nets that have been ripped up to
 			// route this net.  This will not be allowed
 			// a second time, to avoid looping.
+   ROUTE   routes;	// routes for this net
 };
 
 // Flags used by NET "flags" record
@@ -299,7 +289,6 @@ extern NETLIST Abandoned;	// nets that have failed the second pass
 
 extern GATE   Nlgates;
 extern NET    Nlnets;
-extern NODE   Nlnodes;
 
 extern u_int  *Obs[MAX_LAYERS];		// obstructions by layer, y, x
 extern PROUTE *Obs2[MAX_LAYERS]; 	// working copy of Obs 
@@ -314,16 +303,18 @@ extern DSEG  UserObs;			// user-defined obstruction layers
 extern u_char needblockX[MAX_LAYERS];
 extern u_char needblockY[MAX_LAYERS];
 
-extern int   Numnodes;
 extern int   Numnets;
 extern int   Numgates;
 extern int   Numpins;
 extern int   Verbose;
 
+extern int    set_num_channels();
+extern int    allocate_obs_array();
+
 NET    getnettoroute();
 void   dosecondstage();
 int    doroute(NET net, u_char stage);
-int    route_segs(ROUTE rt, u_char stage);
+int    route_segs(NET net, ROUTE rt, u_char stage);
 ROUTE  createemptyroute();
 void   emit_routes(char *filename, double oscale);
 

@@ -56,6 +56,13 @@ Added code for detailed analysis of port
 geometry and taking steps necessary to avoid
 generating DRC errors.
 
+Redesigned internal structures so that nodes
+are not in an independent list, but only listed
+under their assigned net.  Routes are assigned
+to nets, not to nodes.  Added the ability to read
+in existing route geometry and add it to the
+database.
+
 ----------------------------------------------
 Compilation & installation:
 ----------------------------------------------

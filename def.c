@@ -37,8 +37,10 @@
  *
  * DefAddRoutes --
  *
- *	Parse a network route statement from the DEF file,
- *	and add it to the linked list representing the route.
+ *	Parse a network route statement from the DEF file.
+ *	If "special" is 1, then, add the geometry to the
+ *	list of obstructions.  If "special" is 0, then read
+ *	the geometry into a route structure for the net. 
  *
  * Results:
  *	Returns the last token encountered.
@@ -51,18 +53,25 @@
  */
 
 char *
-DefAddRoutes(FILE *f, float oscale, char special)
+DefAddRoutes(FILE *f, float oscale, NET net, char special)
 {
     char *token;
-    DSEG routeList, newRoute = NULL, routeTop = NULL;
+    SEG routeList, newRoute = NULL;
+    DSEG lr, drect;
     struct point_ refp;
     char valid = FALSE;		/* is there a valid reference point? */
     char initial = TRUE;
     struct dseg_ locarea;
-    float x, y, z, w;
-    int routeWidth, paintWidth, saveWidth;
+    double x, y, lx, ly, w;
     int routeLayer, paintLayer;
     LefList lefl;
+    NODE node;
+    ROUTE routednet;
+
+    node = net->netnodes;
+
+    /* Set pitches and allocate memory for Obs[] if we haven't yet. */
+    set_num_channels();
 
     while (initial || (token = LefNextToken(f, TRUE)) != NULL)
     {
@@ -89,19 +98,30 @@ DefAddRoutes(FILE *f, float oscale, char special)
 	    {
 		/* SPECIALNETS has the additional width */
 		token = LefNextToken(f, TRUE);
-		if (sscanf(token, "%f", &w) != 1)
+		if (sscanf(token, "%lg", &w) != 1)
 		{
 		    LefError("Bad width in special net\n");
 		    continue;
 		}
 		if (w != 0)
-		    paintWidth = (int)roundf(w / oscale);
+		    w /= oscale;
 		else
-		    paintWidth = LefGetRouteWidth(paintLayer); 
-		saveWidth = paintWidth;
+		    w = LefGetRouteWidth(paintLayer); 
 	    }
 	    else
-		paintWidth = LefGetRouteWidth(paintLayer); 
+		w = LefGetRouteWidth(paintLayer); 
+
+	    // Create a new route record, add to the 1st node
+
+	    if (special == (char)0) {
+	       routednet = (ROUTE)malloc(sizeof(struct route_));
+	       routednet->next = net->routes;
+	       net->routes = routednet;
+
+	       routednet->netnum = net->netnum;
+	       routednet->segments = NULL;
+	       routednet->output = 0;
+	    }
 	}
 	else if (*token != '(')	/* via name */
 	{
@@ -117,75 +137,62 @@ DefAddRoutes(FILE *f, float oscale, char special)
 	    lefl = LefFindLayer(token);
 	    if (lefl != NULL)
 	    {
-		newRoute = (DSEG)malloc(sizeof(struct dseg_));
-
 		/* The area to paint is derived from the via definitions. */
 
 		if (lefl != NULL)
 		{
-		    DSEG viaRoute, addRoute;
-
-		    /* If there is a linkedRect structure for the via,	*/
-		    /* add those records to the route first.		*/
-
-		    for (viaRoute = lefl->info.via.lr; viaRoute != NULL;
-				viaRoute = viaRoute->next)
-		    {
-			addRoute = (DSEG)malloc(sizeof(struct dseg_));
-			addRoute->next = NULL;
-			addRoute->layer = viaRoute->layer;
-
-			addRoute->x1 = viaRoute->x1 + refp.x1;
-			addRoute->y1 += refp.y1;
-			addRoute->x2 += refp.x1;
-			addRoute->y2 += refp.y1;
-
-			addRoute->x1 /= 2.0;
-			addRoute->y1 /= 2.0;
-			addRoute->x2 /= 2.0;
-			addRoute->y2 /= 2.0;
-	
-			if (routeTop)
-			    routeList->next = addRoute;
-			else
-			    routeTop = addRoute;
-
-			routeList = addRoute;
+		    if (lefl->lefClass == CLASS_VIA) {
+			paintLayer = Num_layers - 1;
+			routeLayer = -1;
+			lr = lefl->info.via.lr;
+			while (lr != NULL) {
+			   routeLayer = lr->layer;
+			   if (routeLayer < paintLayer) paintLayer = routeLayer;
+			   if ((routeLayer >= 0) && (special == (char)1) &&
+					(valid == TRUE)) {
+			      drect = (DSEG)malloc(sizeof(struct dseg_));
+			      drect->x1 = x + lr->x1;
+			      drect->x2 = x + lr->x2;
+			      drect->y1 = y + lr->y1;
+			      drect->y2 = y + lr->y2;
+			      drect->layer = lr->layer;
+			      drect->next = UserObs;
+			      UserObs = drect;
+			   }
+			   lr = lr->next;
+			}
+			if (routeLayer == -1) paintLayer = lefl->type;
 		    }
-			
-		    paintLayer = lefl->type;
-
-		    newRoute->x1 = refp.x1 + lefl->info.via.area.x1;
-		    newRoute->y1 = refp.y1 + lefl->info.via.area.y1;
-		    newRoute->x2 = refp.x1 + lefl->info.via.area.x2;
-		    newRoute->y2 = refp.y1 + lefl->info.via.area.y2;
-
-		    newRoute->x1 /= 2.0;
-		    newRoute->y1 /= 2.0;
-		    newRoute->x2 /= 2.0;
-		    newRoute->y2 /= 2.0;
-
+		    else
+		    	paintLayer = lefl->type;
 		}
 		else
 		{
 		    LefError("Error: Via \"%s\" named but undefined.\n", token);
-		    newRoute->x1 = refp.x1 - paintWidth;
-		    newRoute->y1 = refp.y1 - paintWidth;
-		    newRoute->x2 = refp.x1 + paintWidth;
-		    newRoute->y2 = refp.y1 + paintWidth;
-
-		    newRoute->x1 /= 2.0;
-		    newRoute->y1 /= 2.0;
-		    newRoute->x2 /= 2.0;
-		    newRoute->y2 /= 2.0;
+		    paintLayer = routeLayer;
 		}
+		if ((special == (char)0) && (paintLayer >= 0)) {
 
-		/* After the via, the new route layer becomes whatever	*/
-		/* residue of the via was NOT the previous route layer.	*/
-		/* This is absolutely impossible to make consistent	*/
-		/* with the DEF	spec, but there you have it. . .	*/
+		    newRoute = (SEG)malloc(sizeof(struct seg_));
+		    newRoute->segtype = ST_VIA;
+		    newRoute->x1 = refp.x1;
+		    newRoute->x2 = refp.x1;
+		    newRoute->y1 = refp.y1;
+		    newRoute->y2 = refp.y1;
+		    newRoute->layer = paintLayer;
+		    newRoute->next = NULL;
 
-		/* to be done. . . */
+		    if (routednet->segments == NULL) {
+		        routednet->segments = newRoute;
+		        routeList = newRoute;
+		    }
+		    else {
+		        routeList->next = newRoute;
+		        routeList = newRoute;
+		    }
+		}
+		else
+		    LefError("Via \"%s\" does not define a metal layer!\n", token);
 	    }
 	    else
 		LefError("Via name \"%s\" unknown in route.\n", token);
@@ -198,6 +205,8 @@ DefAddRoutes(FILE *f, float oscale, char special)
 	    /* Record current reference point */
 	    locarea.x1 = refp.x1;
 	    locarea.y1 = refp.y1;
+	    lx = x;
+	    ly = y;
 
 	    /* Read an (X Y) point */
 	    token = LefNextToken(f, TRUE);	/* read X */
@@ -209,9 +218,10 @@ DefAddRoutes(FILE *f, float oscale, char special)
 		    goto endCoord;
 		}
 	    }
-	    else if (sscanf(token, "%f", &x) == 1)
+	    else if (sscanf(token, "%lg", &x) == 1)
 	    {
-		refp.x1 = (int)roundf((2 * x) / oscale);
+		x /= oscale;		// In microns
+		refp.x1 = (int)((x - Xlowerbound + 1e-4) / PitchX[paintLayer]);
 	    }
 	    else
 	    {
@@ -229,34 +239,15 @@ DefAddRoutes(FILE *f, float oscale, char special)
 		    goto endCoord;
 		}
 	    }
-	    else if (sscanf(token, "%f", &y) == 1)
+	    else if (sscanf(token, "%lg", &y) == 1)
 	    {
-		refp.y1 = (int)roundf((2 * y) / oscale);
+		y /= oscale;		// In microns
+		refp.y1 = (int)((y - Ylowerbound + 1e-4) / PitchY[paintLayer]);
 	    }
 	    else
 	    {
 		LefError("Cannot parse Y coordinate.\n"); 
 		goto endCoord;
-	    }
-
-	    /* Extension is half-width for regular nets, 0 for special nets */
-	    /* 0 for special nets is *not* how the 5.3 spec reads, but it   */
-	    /* is apparently how everyone interprets it, and is true for    */
-	    /* 5.6 spec.						    */
-
-	    z = (special) ? 0 : paintWidth;
-	    token = LefNextToken(f, TRUE);
-	    if (*token != ')')
-	    {
-		/* non-default route extension */
-		if (sscanf(token, "%f", &z) != 1)
-		    LefError("Can't parse route extension value.\n");
-
-		/* all values will be divided by 2, so we need	*/
-		/* to multiply up by 2 now.			*/
-
-		else
-		    z *= 2;
 	    }
 
 	    /* Indicate that we have a valid reference point */
@@ -273,47 +264,59 @@ DefAddRoutes(FILE *f, float oscale, char special)
 		LefError("Can't deal with nonmanhattan geometry in route.\n");
 		locarea.x1 = refp.x1;
 		locarea.y1 = refp.y1;
+		lx = x;
+		ly = y;
 	    }
 	    else
 	    {
-		newRoute = (DSEG)malloc(sizeof(struct dseg_));
-
-		/* Route coordinates become the centerline of the	*/
-		/* segment.  "refp" is kept in 1/2 lambda units so	*/
-		/* we should always end up with integer units.		*/
-
 		locarea.x2 = refp.x1;
 		locarea.y2 = refp.y1;
+		lx = x;
+		ly = y;
 
-		if (newRoute->x1 == newRoute->x2)
-		{
-		    newRoute->x1 -= paintWidth;
-		    newRoute->x2 += paintWidth;
+		if (special == (char)1) {
+		   if (valid == TRUE) {
+		      drect = (DSEG)malloc(sizeof(struct dseg_));
+		      if (lx > x) {
+		         drect->x1 = x - w;
+		         drect->x2 = lx + w;
+		      }
+		      else {
+		         drect->x1 = x + w;
+		         drect->x2 = lx - w;
+		      }
+		      if (ly > y) {
+		         drect->y1 = y - w;
+		         drect->y2 = ly + w;
+		      }
+		      else {
+		         drect->y1 = y + w;
+		         drect->y2 = ly - w;
+		      }
+		      drect->layer = lr->layer;
+		      drect->next = UserObs;
+		      UserObs = drect;
+		   }
 		}
-		else
-		{
-		    newRoute->x1 -= z;
-		    newRoute->x2 += z;
-		}
+		else {
+		   newRoute = (SEG)malloc(sizeof(struct seg_));
+		   newRoute->segtype = ST_WIRE;
+		   newRoute->x1 = locarea.x1;
+		   newRoute->x2 = locarea.x2;
+		   newRoute->y1 = locarea.y1;
+		   newRoute->y2 = locarea.y2;
+		   newRoute->layer = paintLayer;
+		   newRoute->next = NULL;
 
-		if (newRoute->y1 == newRoute->y2)
-		{
-		    newRoute->y1 -= paintWidth;
-		    newRoute->y2 += paintWidth;
+		   if (routednet->segments == NULL) {
+		       routednet->segments = newRoute;
+		       routeList = newRoute;
+		   }
+		   else {
+		       routeList->next = newRoute;
+		       routeList = newRoute;
+		   }
 		}
-		else
-		{
-		    newRoute->y1 -= z;
-		    newRoute->y2 += z;
-		}
-
-		/* If we don't have integer units here, we should	*/
-		/* rescale the magic internal grid.			*/
-
-		newRoute->x1 /= 2.0;
-		newRoute->y1 /= 2.0;
-		newRoute->x2 /= 2.0;
-		newRoute->y2 /= 2.0;
 	    }
 
 endCoord:
@@ -322,33 +325,14 @@ endCoord:
 		token = LefNextToken(f, TRUE);
 	}
 
-	/* Link in the new route segment */
-	if (newRoute)
-	{
-	    newRoute->layer = paintLayer;
-	    newRoute->next = NULL;
-
-	    if (routeTop)
-		routeList->next = newRoute;
-	    else
-		routeTop = newRoute;
-
-	    routeList = newRoute;
-	    newRoute = NULL;
-	}
     }
 
-    /* Process each segment and paint into the layout */
+    /* Make sure we have allocated memory for nets */
+    allocate_obs_array();
 
-    while (routeTop != NULL)
-    {
-	/* to be done:  apply obstructions to grids */
+    /* Write the route(s) back into Obs[] */
+    writeback_all_routes(net);
 
-	/* advance to next point and free record */
-	routeList = routeTop->next;
-	free(routeTop);
-	routeTop = routeList;
-    }
     return token;	/* Pass back the last token found */
 }
 
@@ -371,7 +355,6 @@ DefReadGatePin(NET net, NODE node, char *instname, char *pinname, double *home)
 {
     NODE node2;
     int i, j;
-    NODELIST nl;
     GATE gateginfo;
     DSEG drect;
     GATE g;
@@ -446,10 +429,8 @@ DefReadGatePin(NET net, NODE node, char *instname, char *pinname, double *home)
 			    g->netnum[i] = net->netnum;
 			    g->noderec[i] = node;
 			    node->netname = net->netname;
-			    node->routes = (ROUTE)NULL;
-			    node->next = Nlnodes;
-			    Nlnodes = node;
-			    Numnodes++;
+			    node->next = net->netnodes;
+			    net->netnodes = node;
 			    break;
 			}
 		    }
@@ -499,7 +480,6 @@ DefReadNets(FILE *f, char *sname, float oscale, char special, int total)
 
     NET net;
     NODE node, node2;
-    NODELIST nl;
     GATE gateginfo;
     DSEG drect;
     GATE g;
@@ -529,7 +509,6 @@ DefReadNets(FILE *f, char *sname, float oscale, char special, int total)
     {
 	// Initialize net and node records
 	Nlnets = (NET)NULL;
-	Nlnodes = (NODE)NULL;
 	Numnets = MIN_NET_NUMBER;
 
 	// Compute distance for keepout halo for each route layer
@@ -560,7 +539,7 @@ DefReadNets(FILE *f, char *sname, float oscale, char special, int total)
 		net->netnum = Numnets++;
 		net->netorder = 0;
 		net->netname = strdup(token);
-		net->netnodes = (NODELIST)NULL;
+		net->netnodes = (NODE)NULL;
 		net->noripup = (NETLIST)NULL;
 
 		net->next = Nlnets;
@@ -622,11 +601,18 @@ DefReadNets(FILE *f, char *sname, float oscale, char special, int total)
 			    /* Presently, we ignore this */
 			    break;
 			case DEF_NETPROP_ROUTED:
+			    // Read in the route;  qrouter now takes
+			    // responsibility for this route.
+			    while (token && (*token != ';'))
+			        token = DefAddRoutes(f, oscale, net, special);
+			    break;
 			case DEF_NETPROP_FIXED:
 			case DEF_NETPROP_COVER:
-			    // For now, absorb an already placed route
+			    // Treat fixed nets like specialnets:  read them
+			    // in as obstructions, and write them out as-is.
+			    
 			    while (token && (*token != ';'))
-			        token = DefAddRoutes(f, oscale, special);
+			        token = DefAddRoutes(f, oscale, net, (u_char)1);
 			    break;
 		    }
 		}
@@ -651,18 +637,10 @@ DefReadNets(FILE *f, char *sname, float oscale, char special, int total)
 	// for isolated routed groups within a net.
 
 	for (net = Nlnets; net; net = net->next) {
-	    for (node = Nlnodes; node; node = node->next) {
-		if (node->netname == net->netname) {
-		    nl = (NODELIST)malloc(sizeof(struct nodelist_));
-		    nl->node = node;
-		    nl->next = net->netnodes;
-		    net->netnodes = nl;
-		    net->numnodes++;
-		}
-	    }
-	    for (node = Nlnodes; node; node = node->next)
-		if (node->netname == net->netname)
-		   node->numnodes = net->numnodes;
+	    for (node = net->netnodes; node; node = node->next)
+		net->numnodes++;
+	    for (node = net->netnodes; node; node = node->next)
+		node->numnodes = net->numnodes;
 	}
     }
 

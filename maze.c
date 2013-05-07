@@ -65,9 +65,6 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
     u_char found_one = (u_char)0;
     POINT gpoint;
     DPOINT ntap;
-    ROUTE rt;
-    SEG seg;
-    NODE n2;
     PROUTE *Pr;
 
     /* Process tap points of the node */
@@ -169,68 +166,6 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
        else if (Pr->prdata.net < Numnets) obsnet++;
     }
 
-    // That which is already routed (routes should be attached to source
-    // nodes) is routable by definition. . .
-
-    for (rt = node->routes; rt; rt = rt->next) {
-       if (rt->segments && rt->node) {
-	  for (seg = rt->segments; seg; seg = seg->next) {
-	     lay = seg->layer;
-	     x = seg->x1;
-	     y = seg->y1;
-	     while (1) {
-		Pr = &Obs2[lay][OGRID(x, y, lay)];
-		Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
-		// Conflicts should not happen (check for this?)
-		// if (Pr->prdata.net != node->netnum) Pr->flags |= PR_CONFLICT;
-		Pr->prdata.cost = (newflags == PR_SOURCE) ? 0 : MAXRT;
-
-		// push this point on the stack to process
-
-		if (pushlist != NULL) {
-	  	   gpoint = (POINT)malloc(sizeof(struct point_));
-	  	   gpoint->x1 = x;
-	  	   gpoint->y1 = y;
-	  	   gpoint->layer = lay;
-	  	   gpoint->next = *pushlist;
-	 	   *pushlist = gpoint;
-		}
-		found_one = (u_char)1;
-
-		// record extents
-		if (bbox) {
-		   if (x < bbox->x1) bbox->x1 = x;
-		   if (x > bbox->x2) bbox->x2 = x;
-		   if (y < bbox->y1) bbox->y1 = y;
-		   if (y > bbox->y2) bbox->y2 = y;
-		}
-
-		// If we found another node connected to the route,
-		// then process it, too.
-
-		n2 = Nodeloc[lay][OGRID(x, y, lay)];
-		if ((n2 != (NODE)NULL) && (n2 != node)) {
-		   result = set_node_to_net(n2, newflags, pushlist, bbox, stage);
-		}
-
-		// Process top part of via
-		if (seg->segtype & ST_VIA) {
-		   if (lay != seg->layer) break;
-		   lay++;
-		   continue;
-		}
-
-		// Move to next grid position in segment
-		if (x == seg->x2 && y == seg->y2) break;
-		if (seg->x2 > seg->x1) x++;
-		else if (seg->x2 < seg->x1) x--;
-		if (seg->y2 > seg->y1) y++;
-		else if (seg->y2 < seg->y1) y--;
-	     }
-	  }
-       }
-    }
-
     // In the case that no valid tap points were found,	if we're on the
     // rip-up and reroute section, try again, ignoring existing routes that
     // are in the way of the tap point.  If that fails, then we will
@@ -255,6 +190,82 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
 }
 
 /*--------------------------------------------------------------*/
+/* That which is already routed (routes should be attached to	*/
+/* source nodes) is routable by definition. . .			*/
+/*--------------------------------------------------------------*/
+
+int set_routes_to_net(NET net, int newflags, POINT *pushlist, SEG bbox, u_char stage)
+{
+    int x, y, lay, k;
+    int result = 0;
+    POINT gpoint;
+    ROUTE rt;
+    SEG seg;
+    NODE n2;
+    PROUTE *Pr;
+
+    for (rt = net->routes; rt; rt = rt->next) {
+       if (rt->segments) {
+	  for (seg = rt->segments; seg; seg = seg->next) {
+	     lay = seg->layer;
+	     x = seg->x1;
+	     y = seg->y1;
+	     while (1) {
+		Pr = &Obs2[lay][OGRID(x, y, lay)];
+		Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
+		// Conflicts should not happen (check for this?)
+		// if (Pr->prdata.net != node->netnum) Pr->flags |= PR_CONFLICT;
+		Pr->prdata.cost = (newflags == PR_SOURCE) ? 0 : MAXRT;
+
+		// push this point on the stack to process
+
+		if (pushlist != NULL) {
+	  	   gpoint = (POINT)malloc(sizeof(struct point_));
+	  	   gpoint->x1 = x;
+	  	   gpoint->y1 = y;
+	  	   gpoint->layer = lay;
+	  	   gpoint->next = *pushlist;
+	 	   *pushlist = gpoint;
+		}
+
+		// record extents
+		if (bbox) {
+		   if (x < bbox->x1) bbox->x1 = x;
+		   if (x > bbox->x2) bbox->x2 = x;
+		   if (y < bbox->y1) bbox->y1 = y;
+		   if (y > bbox->y2) bbox->y2 = y;
+		}
+
+		// If we found another node connected to the route,
+		// then process it, too.
+
+		n2 = Nodeloc[lay][OGRID(x, y, lay)];
+		if ((n2 != (NODE)NULL) && (n2 != net->netnodes)) {
+		   result = set_node_to_net(n2, newflags, pushlist, bbox, stage);
+		   if (result < 0) return result;
+		}
+
+		// Process top part of via
+		if (seg->segtype & ST_VIA) {
+		   if (lay != seg->layer) break;
+		   lay++;
+		   continue;
+		}
+
+		// Move to next grid position in segment
+		if (x == seg->x2 && y == seg->y2) break;
+		if (seg->x2 > seg->x1) x++;
+		else if (seg->x2 < seg->x1) x--;
+		if (seg->y2 > seg->y1) y++;
+		else if (seg->y2 < seg->y1) y--;
+	     }
+	  }
+       }
+    }
+    return result;
+}
+
+/*--------------------------------------------------------------*/
 /* Find nets that are colliding with the given net "net", and	*/
 /* create and return a list of them.				*/
 /*--------------------------------------------------------------*/
@@ -262,8 +273,6 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
 NETLIST find_colliding(NET net)
 {
    NETLIST nl = (NETLIST)NULL, cnl;
-   NODELIST ndl;
-   NODE node;
    NET  fnet;
    ROUTE rt;
    SEG seg;
@@ -271,49 +280,46 @@ NETLIST find_colliding(NET net)
 
    /* Scan the routed points for recorded collisions.	*/
 
-   for (ndl = net->netnodes; ndl; ndl = ndl->next) {
-      node = ndl->node;
-      for (rt = node->routes; rt; rt = rt->next) {
-         if (rt->segments && rt->node) {
-	    for (seg = rt->segments; seg; seg = seg->next) {
-	       lay = seg->layer;
-	       x = seg->x1;
-	       y = seg->y1;
+   for (rt = net->routes; rt; rt = rt->next) {
+      if (rt->segments) {
+	 for (seg = rt->segments; seg; seg = seg->next) {
+	    lay = seg->layer;
+	    x = seg->x1;
+	    y = seg->y1;
 
-	       // The following skips over vias, which is okay, since
-	       // those positions are either covered by segments, or
-	       // are terminals of the net.
+	    // The following skips over vias, which is okay, since
+	    // those positions are either covered by segments, or
+	    // are terminals of the net.
 
-	       while (1) {
-	          orignet = Obs[lay][OGRID(x, y, lay)] & ~ROUTED_NET;
+	    while (1) {
+	       orignet = Obs[lay][OGRID(x, y, lay)] & ~ROUTED_NET;
 
-	          if (orignet != net->netnum) {
+	       if (orignet != net->netnum) {
 
-	             /* Route collision.  Save this net if it is	*/
-	             /* not already in the list of colliding nets.	*/
+	          /* Route collision.  Save this net if it is	*/
+	          /* not already in the list of colliding nets.	*/
 
-	             for (cnl = nl; cnl; cnl = cnl->next) {
-		        if (cnl->net->netnum == orignet)
-		           break;
-	             }
-	             if (cnl == NULL) {
-		        cnl = (NETLIST)malloc(sizeof(struct netlist_));
-		        for (fnet = Nlnets; fnet; fnet = fnet->next) {
-		           if (fnet->netnum == orignet) {
-		              cnl->net = fnet;
-		              cnl->next = nl;
-		              nl = cnl;
-			      break;
-			   }
+	          for (cnl = nl; cnl; cnl = cnl->next) {
+		     if (cnl->net->netnum == orignet)
+		        break;
+	          }
+	          if (cnl == NULL) {
+		     cnl = (NETLIST)malloc(sizeof(struct netlist_));
+		     for (fnet = Nlnets; fnet; fnet = fnet->next) {
+		        if (fnet->netnum == orignet) {
+		           cnl->net = fnet;
+		           cnl->next = nl;
+		           nl = cnl;
+			   break;
 			}
 		     }
 		  }
-	          if ((x == seg->x2) && (y == seg->y2)) break;
-		  if (x < seg->x2) x++;
-		  else if (x > seg->x2) x--;
-		  if (y < seg->y2) y++;
-		  else if (y > seg->y2) y--;
 	       }
+	       if ((x == seg->x2) && (y == seg->y2)) break;
+	       if (x < seg->x2) x++;
+	       else if (x > seg->x2) x--;
+	       if (y < seg->y2) y++;
+	       else if (y > seg->y2) y--;
 	    }
 	 }
       }
@@ -348,7 +354,6 @@ u_char ripup_net(NET net, u_char restore)
    int thisnet, oldnet, x, y, lay, dir;
    double sreq;
    NODE node;
-   NODELIST nl;
    ROUTE rt;
    SEG seg;
    DPOINT ntap;
@@ -366,80 +371,78 @@ u_char ripup_net(NET net, u_char restore)
 
    thisnet = net->netnum;
 
-   for (nl = net->netnodes; nl; nl = nl->next) {
-      node = nl->node;
-
-      for (rt = node->routes; rt; rt = rt->next) {
-         if (rt->segments && rt->node) {
-	    for (seg = rt->segments; seg; seg = seg->next) {
-	       lay = seg->layer;
-	       x = seg->x1;
-	       y = seg->y1;
-	       while (1) {
-	          oldnet = Obs[lay][OGRID(x, y, lay)] & NETNUM_MASK;
-	          if ((oldnet > 0) && (oldnet < Numnets)) {
-	             if (oldnet != thisnet) {
-		        fprintf(stderr, "Error: position %d %d layer %d has net "
+   for (rt = net->routes; rt; rt = rt->next) {
+      if (rt->segments) {
+	 for (seg = rt->segments; seg; seg = seg->next) {
+	    lay = seg->layer;
+	    x = seg->x1;
+	    y = seg->y1;
+	    while (1) {
+	       oldnet = Obs[lay][OGRID(x, y, lay)] & NETNUM_MASK;
+	       if ((oldnet > 0) && (oldnet < Numnets)) {
+	          if (oldnet != thisnet) {
+		     fprintf(stderr, "Error: position %d %d layer %d has net "
 				"%d not %d!\n", x, y, lay, oldnet, thisnet);
-		        return FALSE;	// Something went wrong
-	             }
+		     return FALSE;	// Something went wrong
+	          }
 
-	             // Reset the net number to zero along this route for
-	             // every point that is not a node tap.  Points that
-		     // were routed over obstructions to reach off-grid
-		     // taps are returned to obstructions.
+	          // Reset the net number to zero along this route for
+	          // every point that is not a node tap.  Points that
+		  // were routed over obstructions to reach off-grid
+		  // taps are returned to obstructions.
 
-	             if (Nodesav[lay][OGRID(x, y, lay)] == (NODE)NULL) {
-			dir = Obs[lay][OGRID(x, y, lay)] & PINOBSTRUCTMASK;
-			if (dir == 0)
-		           Obs[lay][OGRID(x, y, lay)] = 0;
-			else
-		           Obs[lay][OGRID(x, y, lay)] = NO_NET | dir;
-		     }
-
-		     // Routes which had blockages added on the sides due
-		     // to spacing constraints have (NO_NET | ROUTED_NET)
-		     // set;  these flags should be removed.
-
-		     if (needcheckX[lay]) {
-		        if ((x > 0) && ((Obs[lay][OGRID(x - 1, y, lay)] &
-				(NO_NET | ROUTED_NET)) == (NO_NET | ROUTED_NET)))
-			   Obs[lay][OGRID(x - 1, y, lay)] &= ~(NO_NET | ROUTED_NET);
-		        else if ((x < NumChannelsX[lay] - 1) &&
-				((Obs[lay][OGRID(x + 1, y, lay)] &
-				(NO_NET | ROUTED_NET)) == (NO_NET | ROUTED_NET)))
-			   Obs[lay][OGRID(x + 1, y, lay)] &= ~(NO_NET | ROUTED_NET);
-		     }
-		     if (needcheckY[lay]) {
-		        if ((y > 0) && ((Obs[lay][OGRID(x, y - 1, lay)] &
-				(NO_NET | ROUTED_NET)) == (NO_NET | ROUTED_NET)))
-			   Obs[lay][OGRID(x, y - 1, lay)] &= ~(NO_NET | ROUTED_NET);
-		        else if ((y < NumChannelsY[lay] - 1) &&
-				((Obs[lay][OGRID(x, y + 1, lay)] &
-				(NO_NET | ROUTED_NET)) == (NO_NET | ROUTED_NET)))
-			   Obs[lay][OGRID(x, y + 1, lay)] &= ~(NO_NET | ROUTED_NET);
-		     }
+	          if (Nodesav[lay][OGRID(x, y, lay)] == (NODE)NULL) {
+		     dir = Obs[lay][OGRID(x, y, lay)] & PINOBSTRUCTMASK;
+		     if (dir == 0)
+		        Obs[lay][OGRID(x, y, lay)] = 0;
+		     else
+		        Obs[lay][OGRID(x, y, lay)] = NO_NET | dir;
 		  }
 
-		  // This break condition misses via ends, but those are
-		  // terminals and don't get ripped out.
+		  // Routes which had blockages added on the sides due
+		  // to spacing constraints have (NO_NET | ROUTED_NET)
+		  // set;  these flags should be removed.
 
-		  if ((x == seg->x2) && (y == seg->y2)) break;
-
-		  if (x < seg->x2) x++;
-		  else if (x > seg->x2) x--;
-		  if (y < seg->y2) y++;
-		  else if (y > seg->y2) y--;
+		  if (needcheckX[lay]) {
+		     if ((x > 0) && ((Obs[lay][OGRID(x - 1, y, lay)] &
+				(NO_NET | ROUTED_NET)) == (NO_NET | ROUTED_NET)))
+			Obs[lay][OGRID(x - 1, y, lay)] &= ~(NO_NET | ROUTED_NET);
+		     else if ((x < NumChannelsX[lay] - 1) &&
+				((Obs[lay][OGRID(x + 1, y, lay)] &
+				(NO_NET | ROUTED_NET)) == (NO_NET | ROUTED_NET)))
+			Obs[lay][OGRID(x + 1, y, lay)] &= ~(NO_NET | ROUTED_NET);
+		  }
+		  if (needcheckY[lay]) {
+		     if ((y > 0) && ((Obs[lay][OGRID(x, y - 1, lay)] &
+				(NO_NET | ROUTED_NET)) == (NO_NET | ROUTED_NET)))
+			Obs[lay][OGRID(x, y - 1, lay)] &= ~(NO_NET | ROUTED_NET);
+		     else if ((y < NumChannelsY[lay] - 1) &&
+				((Obs[lay][OGRID(x, y + 1, lay)] &
+				(NO_NET | ROUTED_NET)) == (NO_NET | ROUTED_NET)))
+			Obs[lay][OGRID(x, y + 1, lay)] &= ~(NO_NET | ROUTED_NET);
+		  }
 	       }
+
+	       // This break condition misses via ends, but those are
+	       // terminals and don't get ripped out.
+
+	       if ((x == seg->x2) && (y == seg->y2)) break;
+
+	       if (x < seg->x2) x++;
+	       else if (x > seg->x2) x--;
+	       if (y < seg->y2) y++;
+	       else if (y > seg->y2) y--;
 	    }
 	 }
       }
+   }
 
-      // For each net node tap, restore the node pointer on Nodeloc so
-      // that crossover costs are again applied to routes over this
-      // node tap.
+   // For each net node tap, restore the node pointer on Nodeloc so
+   // that crossover costs are again applied to routes over this
+   // node tap.
 
-      if (restore != 0) {
+   if (restore != 0) {
+      for (node = net->netnodes; node; node = node->next) {
 	 for (ntap = node->taps; ntap; ntap = ntap->next) {
 	    lay = ntap->layer;
 	    x = ntap->gridx;
@@ -449,20 +452,17 @@ u_char ripup_net(NET net, u_char restore)
       }
    }
 
-   /* Remove all routing information from this node */
+   /* Remove all routing information from this net */
 
-   for (nl = net->netnodes; nl; nl = nl->next) {
-      node = nl->node;
-      while (node->routes) {
-	 rt = node->routes;
-	 node->routes = rt->next;
-	 while (rt->segments) {
-	    seg = rt->segments->next;
-	    free(rt->segments);
-	    rt->segments = seg;
-         }
-	 free(rt);
+   while (net->routes) {
+      rt = net->routes;
+      net->routes = rt->next;
+      while (rt->segments) {
+	 seg = rt->segments->next;
+	 free(rt->segments);
+	 rt->segments = seg;
       }
+      free(rt);
    }
 
    return TRUE;
@@ -697,20 +697,17 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
    int  i, j, k, lay;
    int  x, y;
    int  dx, dy, dl;
-   NODE n1;
    u_int netnum, netobs1, netobs2, dir1, dir2;
    u_char first = (u_char)1;
    u_char dmask;
    u_char pflags, p2flags;
    PROUTE *Pr;
-   DPOINT dp;
    POINT newlr, newlr2, lrtop, lrend, lrnext, lrcur, lrprev;
    double sreq;
 
    fflush(stdout);
    fprintf(stderr, "\nCommit: TotalRoutes = %d\n", TotalRoutes);
 
-   n1 = rt->node;
    netnum = rt->netnum;
 
    Pr = &Obs2[ept->lay][OGRID(ept->x, ept->y, ept->lay)];
@@ -1212,9 +1209,6 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
       lrcur->y1 = seg->y2;
       lrprev = lrcur->next;
 
-      dp = n1->taps;
-      if (dp == NULL) dp = n1->extend;
-
       if (lrprev == NULL) {
 
          if (dir2 && (stage == (u_char)0)) {
@@ -1259,7 +1253,6 @@ int writeback_route(ROUTE rt)
 {
    SEG seg;
    int  i;
-   NODE n1;
    u_int netnum, dir1, dir2;
    u_char first = (u_char)1;
 
@@ -1291,16 +1284,11 @@ int writeback_route(ROUTE rt)
 int writeback_all_routes(NET net)
 {
    ROUTE rt;
-   NODELIST ndl;
-   NODE node;
    int result = TRUE;
 
-   for (ndl = net->netnodes; ndl; ndl = ndl->next) {
-      node = ndl->node;
-      for (rt = node->routes; rt; rt = rt->next) {
-	 if (writeback_route(rt) == FALSE)
-	    result = FALSE;
-      }
+   for (rt = net->routes; rt; rt = rt->next) {
+      if (writeback_route(rt) == FALSE)
+	 result = FALSE;
    }
    return result;
 }
