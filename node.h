@@ -7,8 +7,8 @@
 
 #ifndef NODE_H
 
-#define SRCNETNUM        1
-#define TARGNETNUM       2
+#define GND_NET		 1
+#define VDD_NET		 2
 #define MIN_NET_NUMBER   3
 
 void create_netorder( void );

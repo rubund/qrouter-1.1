@@ -340,12 +340,10 @@ void create_obstructions_from_gates()
 	     // Diagnostic, and power bus handling
 	     no_net = NO_NET;
 	     if (g->node[i]) {
-		if (!strncasecmp(g->node[i], "vdd", 3))
-		   no_net |= OBS_VDD;
-		else if (!strncasecmp(g->node[i], "gnd", 3))
-		   no_net |= OBS_VSS;
-		else if (!strncasecmp(g->node[i], "vss", 3))
-		   no_net |= OBS_VSS;
+		if (vddnet && !strncmp(g->node[i], vddnet, strlen(vddnet)))
+		   continue;
+		else if (gndnet && !strncmp(g->node[i], gndnet, strlen(gndnet)))
+		   continue;
 		else
 		   fprintf(stdout, "Gate instance %s unconnected node %s\n",
 				g->gatename, g->node[i]);

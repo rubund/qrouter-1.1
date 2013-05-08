@@ -45,10 +45,15 @@ DSEG   UserObs;		     // user-defined obstruction layers
 u_char needblockX[MAX_LAYERS];
 u_char needblockY[MAX_LAYERS];
 
+char *vddnet = NULL;
+char *gndnet = NULL;
+
 int   Numnets = 0;
 int   Numgates = 0;
 int   Numpins = 0;
 int   Verbose = 0;
+
+int   pwrbus_src;
 
 /*--------------------------------------------------------------*/
 /* Open the "failed" and "cn" (critical nets) files.		*/
@@ -153,7 +158,7 @@ main(int argc, char *argv[])
    Filename[0] = 0;
    DEFfilename[0] = 0;
 
-   while ((i = getopt(argc, argv, "c:i:hv:")) != -1) {
+   while ((i = getopt(argc, argv, "c:i:hv:p:g:")) != -1) {
       switch (i) {
 	 case 'c':
 	    configfile = strdup(optarg);
@@ -163,6 +168,12 @@ main(int argc, char *argv[])
 	    break;
 	 case 'i':
 	    infofile = strdup(optarg);
+	    break;
+	 case 'p':
+	    vddnet = strdup(optarg);
+	    break;
+	 case 'g':
+	    gndnet = strdup(optarg);
 	    break;
 	 default:
 	    fprintf(stderr, "bad switch %d\n", i);
@@ -333,7 +344,8 @@ main(int argc, char *argv[])
 
    for (i = 0; i < Numnets; i++) {
       net = getnettoroute(i);
-      if (net != NULL) doroute(net, (u_char)0);
+      if ((net != NULL) && (net->netnodes != NULL))
+	 doroute(net, (u_char)0);
    }
 
    fflush(stdout);
@@ -628,6 +640,13 @@ NET getnettoroute(int order)
 	if (net->numnodes >= 2) {
 	   return net;
         }
+	// Qrouter will route power and ground nets even if the
+	// standard cell power and ground pins are not listed in
+	// the nets section.  Because of this, it is okay to have
+	// only one node.
+	else if (net->numnodes == 1 && (net->netnum == VDD_NET ||
+		net->netnum == GND_NET))
+	   return net;
      }
   }
   if (Verbose > 0) {
@@ -1032,6 +1051,9 @@ int doroute(NET net, u_char stage)
 
   CurNet = net;				// Global, used by 2nd stage
 
+  if (net->netnum == VDD_NET || net->netnum == GND_NET)
+     pwrbus_src = 0;
+
   while (1) {	// Keep going until we are unable to route to a terminal
 
      TotalRoutes++;
@@ -1106,11 +1128,10 @@ int route_segs(NET net, ROUTE rt, u_char stage)
   GRIDP best, curpt;
   int  result, rval;
   u_char first = (u_char)1;
+  u_char do_pwrbus;
   u_char check_order[6];
   DPOINT n1tap, n2tap;
   PROUTE *Pr;
-
-  n1 = net->netnodes;
 
   // Make Obs2[][] a copy of Obs[][].  Convert pin obstructions to
   // terminal positions for the net being routed.
@@ -1142,12 +1163,26 @@ int route_segs(NET net, ROUTE rt, u_char stage)
   glist = (POINT)NULL;
   gunproc = (POINT)NULL;
 
+  n1 = net->netnodes;
+
+  if (n1->netnum == VDD_NET || n1->netnum == GND_NET) {
+     // The normal method of selecting source and target is not amenable
+     // to power bus routes.  Instead, we use the global standard cell
+     // power rails as the target, and each net in sequence becomes the
+     // sole source node
+     
+     do_pwrbus = TRUE;
+     for (i = 0; i < pwrbus_src; i++) n1 = n1->next;
+  }
+  else do_pwrbus = FALSE;
+
   // We start at the node referenced by the route structure, and flag all
   // of its taps as PR_SOURCE, as well as all connected routes.
 
   bbox.x2 = bbox.y2 = 0;
   bbox.x1 = NumChannelsX[0];
   bbox.y1 = NumChannelsY[0];
+
   rval = set_node_to_net(n1, PR_SOURCE, &glist, &bbox, stage);
 
   if (rval == -2) {
@@ -1156,31 +1191,42 @@ int route_segs(NET net, ROUTE rt, u_char stage)
   }
 
   // Set associated routes to PR_SOURCE
-  rval = set_routes_to_net(net, PR_SOURCE, &glist, &bbox, stage);
+  if (do_pwrbus == FALSE) {
+     rval = set_routes_to_net(net, PR_SOURCE, &glist, &bbox, stage);
 
-  if (rval == -2) {
-     printf("Node of net %s has no tap points---unable to route!\n", net->netname);
-     return -1;
+     if (rval == -2) {
+        printf("Node of net %s has no tap points---unable to route!\n", net->netname);
+        return -1;
+     }
+
+     // Now search for all other nodes on the same net that have not yet been
+     // routed, and flag all of their taps as PR_TARGET
+
+     result = 0;
+     for (n2 = n1->next; n2; n2 = n2->next) {
+        rval = set_node_to_net(n2, PR_TARGET, NULL, &bbox, stage);
+        if (rval == 0) {
+	   n2save = n2;
+	   result = 1;
+        }
+        else if (rval == -2) {
+           printf("Node of net %s has no tap points---unable to route!\n", n2->netname);
+	   if (result == 0) result = -1;
+        }
+     }
+
+     /* If there's only one node left and it's not routable, then fail. */
+     if (result == -1) return -1;
   }
-
-  // Now search for all other nodes on the same net that have not yet been
-  // routed, and flag all of their taps as PR_TARGET
-
-  result = 0;
-  for (n2 = n1->next; n2; n2 = n2->next) {
-     rval = set_node_to_net(n2, PR_TARGET, NULL, &bbox, stage);
-     if (rval == 0) {
-	n2save = n2;
+  else {
+     pwrbus_src++;
+     if (pwrbus_src >= net->numnodes)
+	result = 0;
+     else {
+        set_powerbus_to_net(n1->netnum);
 	result = 1;
      }
-     else if (rval == -2) {
-        printf("Node of net %s has no tap points---unable to route!\n", n2->netname);
-	if (result == 0) result = -1;
-     }
   }
-
-  /* If there's only one node left and it's not routable, then fail. */
-  if (result == -1) return -1;
 
   // Check for the possibility that there is already a route to the target
   if (!result) {
@@ -1219,29 +1265,43 @@ int route_segs(NET net, ROUTE rt, u_char stage)
   // algorithm.  If the initial max cost is so low that no route can
   // be found, it will be doubled on each pass.
 
-  maxcost = 1 + 2 * MAX((bbox.x2 - bbox.x1), (bbox.y2 - bbox.y1)) * SegCost +
+  if (do_pwrbus)
+     maxcost = 20;	// Maybe make this SegCost * row height?
+  else {
+     maxcost = 1 + 2 * MAX((bbox.x2 - bbox.x1), (bbox.y2 - bbox.y1)) * SegCost +
 		(int)stage * ConflictCost;
-  maxcost /= (n1->numnodes - 1);
+     maxcost /= (n1->numnodes - 1);
+  }
 
   netnum = rt->netnum;
-  n2 = n2save;
-
   n1tap = n1->taps;
-  n2tap = n2->taps;
+  if (!do_pwrbus) {
+     n2 = n2save;
+     n2tap = n2->taps;
+  }
 
-  if ((n1tap == NULL && n1->extend == NULL) || (n2tap == NULL && n2->extend == NULL)) {
+  if (n1tap == NULL && n1->extend == NULL) {
      printf("Node of net %s has no tap points---unable to route!\n", n1->netname);
      return -1;
   }
   if (n1tap == NULL) n1tap = n1->extend;
-  if (n2tap == NULL) n2tap = n2->extend;
+
+  if (!do_pwrbus) {
+     if (n2tap == NULL && n2->extend == NULL) {
+        printf("Node of net %s has no tap points---unable to route!\n", n2->netname);
+        return -1;
+     }
+     if (n2tap == NULL) n2tap = n2->extend;
+  }
 
   printf("Source node @ %gum %gum layer=%d grid=(%d %d)\n",
 	  n1tap->x, n1tap->y, n1tap->layer,
 	  n1tap->gridx, n1tap->gridy);
-  printf("Dest node @ %gum %gum layer=%d grid=(%d %d)\n",
+  if (!do_pwrbus) {
+     printf("Dest node @ %gum %gum layer=%d grid=(%d %d)\n",
 	  n2tap->x, n2tap->y, n2tap->layer,
 	  n2tap->gridx, n2tap->gridy);
+  }
   printf("netname = %s, route number %d\n", n1->netname, TotalRoutes );
   fflush(stdout);
 
@@ -1489,10 +1549,12 @@ int route_segs(NET net, ROUTE rt, u_char stage)
   if (!first) fprintf(stdout, "\n");
   fflush(stdout);
   fprintf(stderr, "Fell through %d passes\n", pass);
-  fprintf(stderr, "(%g,%g) <==> (%g,%g) net=%s\n",
+  if (!do_pwrbus)
+     fprintf(stderr, "(%g,%g) <==> (%g,%g) net=%s\n",
 	   n1tap->x, n1tap->y, n2tap->x, n2tap->y, n1->netname);
   if (!Failfptr) openFailFile();
-  fprintf(Failfptr, "(%g,%g) <==> (%g,%g) net=%s\tRoute=%d\n",
+  if (!do_pwrbus)
+     fprintf(Failfptr, "(%g,%g) <==> (%g,%g) net=%s\tRoute=%d\n",
 	   n1tap->x, n1tap->y, n2tap->x, n2tap->y, n1->netname, TotalRoutes);
   fprintf(CNfptr, "Route Priority\t%s\n", n1->netname);
   fflush(CNfptr);
@@ -2241,6 +2303,8 @@ void helpmessage()
     fprintf(stdout, "\t-c <file>\t\t\tConfiguration file name if not route.cfg.\n");
     fprintf(stdout, "\t-v <level>\t\t\tVerbose output level.\n");
     fprintf(stdout, "\t-i <file>\t\t\tPrint route names and pitches and exit.\n");
+    fprintf(stdout, "\t-p <name>\t\t\tSpecify global power bus name.\n");
+    fprintf(stdout, "\t-g <name>\t\t\tSpecify global ground bus name.\n");
     fprintf(stdout, "\n");
     fprintf(stdout, "%s\n", VERSION);
 

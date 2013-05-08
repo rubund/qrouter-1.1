@@ -536,7 +536,12 @@ DefReadNets(FILE *f, char *sname, float oscale, char special, int total)
 		token = LefNextToken(f, TRUE);
 
 		net = (NET)malloc(sizeof(struct net_));
-		net->netnum = Numnets++;
+		if (vddnet && !strcmp(token, vddnet))
+		   net->netnum = VDD_NET;
+		else if (gndnet && !strcmp(token, gndnet))
+		   net->netnum = GND_NET;
+		else
+		   net->netnum = Numnets++;
 		net->netorder = 0;
 		net->netname = strdup(token);
 		net->netnodes = (NODE)NULL;
@@ -1266,6 +1271,22 @@ DefReadComponents(FILE *f, char *sname, float oscale, int total)
 
 			gate->node[i] = gateginfo->node[i];  /* copy pointer */
 			gate->taps[i] = (DSEG)NULL;
+
+			/* Global power/ground bus check */
+			if (!strcmp(gate->node[i], vddnet)) {
+			   /* Create a placeholder node with no taps */
+			   gate->netnum[i] = VDD_NET;
+			   gate->noderec[i] = (NODE)calloc(1, sizeof(struct node_));
+			   gate->noderec[i]->netnum = VDD_NET;
+			}
+			else if (!strcmp(gate->node[i], gndnet)) {
+			   /* Create a placeholder node with no taps */
+			   gate->netnum[i] = GND_NET;
+			   gate->noderec[i] = (NODE)calloc(1, sizeof(struct node_));
+			   gate->noderec[i]->netnum = GND_NET;
+			}
+			else
+			   gate->netnum[i] = 0;		/* Until we read NETS */
 
 			/* Make a copy of the gate nodes and adjust for	*/
 			/* instance position				*/

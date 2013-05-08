@@ -276,9 +276,6 @@ struct netlist_ {
 #define OBSTRUCT_S	((u_int)0x00000004)  // Stub[] contains distance of
 #define OBSTRUCT_E	((u_int)0x00000002)  // obstruction to grid point.
 #define OBSTRUCT_W	((u_int)0x00000001)
-#define OBS_VDD		((u_int)0x00000010)  // Obstruction is VDD network
-#define OBS_VSS		((u_int)0x00000020)  // Obstruction is VSS network
-#define POWERBUS_MASK	((u_int)0x00000030)
 
 extern STRING DontRoute;
 extern STRING CriticalNet;
@@ -307,6 +304,9 @@ extern int   Numnets;
 extern int   Numgates;
 extern int   Numpins;
 extern int   Verbose;
+
+extern char *vddnet;
+extern char *gndnet;
 
 extern int    set_num_channels();
 extern int    allocate_obs_array();

@@ -24,6 +24,35 @@
 extern int TotalRoutes;
 
 /*--------------------------------------------------------------*/
+/* set_powerbus_to_net()					*/
+/* If we have a power or ground net, go through the entire Obs	*/
+/* array and mark all points matching the net as TARGET in Obs2	*/
+/*								*/
+/* We do this after the call to PR_SOURCE, before the calls	*/
+/* to set PR_TARGET.						*/
+/*--------------------------------------------------------------*/
+
+void
+set_powerbus_to_net(int netnum)
+{
+    int x, y, lay;
+    PROUTE *Pr;
+
+    if ((netnum == VDD_NET) || (netnum == GND_NET)) {
+       for (lay = 0; lay < Num_layers; lay++)
+          for (x = 0; x < NumChannelsX[lay]; x++)
+	     for (y = 0; y < NumChannelsY[lay]; y++)
+		if (Obs[lay][OGRID(x, y, lay)] == netnum) {
+		   Pr = &Obs2[lay][OGRID(x, y, lay)];
+		   if (!(Pr->flags & PR_SOURCE)) {
+		      Pr->flags |= (PR_TARGET | PR_COST);
+		      Pr->prdata.cost = MAXRT;
+		   }
+		}
+    }
+}
+
+/*--------------------------------------------------------------*/
 /* set_node_to_net() ---					*/
 /*								*/
 /* Change the Obs2[][] flag values to "newflags" for all tap	*/
@@ -66,6 +95,14 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
     POINT gpoint;
     DPOINT ntap;
     PROUTE *Pr;
+
+    /* If called from set_route_to_net, the node has no taps, and the	*/
+    /* net is a power bus, just return.					*/
+
+    if ((node->taps == NULL) && (node->extend == NULL)) {
+       if ((node->netnum == VDD_NET) || (node->netnum == GND_NET))
+	   return result;
+    }
 
     /* Process tap points of the node */
 
@@ -186,6 +223,7 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
        else
 	  return -2;
     }
+
     return result;
 }
 
