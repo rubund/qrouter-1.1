@@ -640,25 +640,25 @@ void create_obstructions_from_nodes()
 					" grid %d %d, position %g %g\n",
 					gridx, gridy, dx, dy);
 			     }
-			 }
 
-			 // Check that we have not created a PINOBSTRUCT
-			 // route directly over this point.
-			 if (ds->layer < Num_layers - 1) {
-			      k = Obs[ds->layer + 1][OGRID(gridx, gridy,
+			     // Check that we have not created a PINOBSTRUCT
+			     // route directly over this point.
+			     if (ds->layer < Num_layers - 1) {
+			        k = Obs[ds->layer + 1][OGRID(gridx, gridy,
 					ds->layer + 1)];
-			      if (k & PINOBSTRUCTMASK) {
-			         if ((k & ~PINOBSTRUCTMASK) != (u_int)node->netnum) {
-				    Obs[ds->layer + 1][OGRID(gridx, gridy,
+			        if (k & PINOBSTRUCTMASK) {
+			           if ((k & ~PINOBSTRUCTMASK) != (u_int)node->netnum) {
+				       Obs[ds->layer + 1][OGRID(gridx, gridy,
 						ds->layer + 1)] = 0;
-				    Nodeloc[ds->layer + 1][OGRID(gridx, gridy,
+				       Nodeloc[ds->layer + 1][OGRID(gridx, gridy,
 						ds->layer + 1)] = (NODE)NULL;
-				    Nodesav[ds->layer + 1][OGRID(gridx, gridy,
+				       Nodesav[ds->layer + 1][OGRID(gridx, gridy,
 						ds->layer + 1)] = (NODE)NULL;
-				    Stub[ds->layer + 1][OGRID(gridx, gridy,
+				       Stub[ds->layer + 1][OGRID(gridx, gridy,
 						ds->layer + 1)] = (float)0.0;
-				 }
-			      }
+				   }
+				}
+			     }
 			 }
 		         gridy++;
 		      }
