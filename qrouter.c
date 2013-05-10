@@ -1183,11 +1183,13 @@ int route_segs(NET net, ROUTE rt, u_char stage)
   bbox.x1 = NumChannelsX[0];
   bbox.y1 = NumChannelsY[0];
 
-  rval = set_node_to_net(n1, PR_SOURCE, &glist, &bbox, stage);
+  if (n1 != NULL) {
+     rval = set_node_to_net(n1, PR_SOURCE, &glist, &bbox, stage);
 
-  if (rval == -2) {
-     printf("Node of net %s has no tap points---unable to route!\n", n1->netname);
-     return -1;
+     if (rval == -2) {
+        printf("Node of net %s has no tap points---unable to route!\n", n1->netname);
+        return -1;
+     }
   }
 
   // Set associated routes to PR_SOURCE
@@ -1220,7 +1222,7 @@ int route_segs(NET net, ROUTE rt, u_char stage)
   }
   else {
      pwrbus_src++;
-     if (pwrbus_src >= net->numnodes)
+     if ((pwrbus_src > net->numnodes) || (n1 == NULL))
 	result = 0;
      else {
         set_powerbus_to_net(n1->netnum);
@@ -1230,7 +1232,7 @@ int route_segs(NET net, ROUTE rt, u_char stage)
 
   // Check for the possibility that there is already a route to the target
   if (!result) {
-     fprintf(stdout, "Finished routing net %s\n", n1->netname);
+     fprintf(stdout, "Finished routing net %s\n", net->netname);
 
      // Remove nodes of the net from Nodeloc so that they will not be
      // used for crossover costing of future routes.
