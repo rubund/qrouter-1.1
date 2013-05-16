@@ -1040,7 +1040,6 @@ void fillMask(int value) {
 int doroute(NET net, u_char stage)
 {
   ROUTE rt1, lrt;
-  NODE n1, n2;
   NETLIST nlist;
   int result;
 
@@ -1074,7 +1073,7 @@ int doroute(NET net, u_char stage)
 
      result = route_segs(net, rt1, stage);
 
-     if ((result == 0) || (n1 == NULL)) {
+     if ((result == 0) || (net == NULL)) {
         // Nodes already routed, nothing to do
 	free(rt1);
 	return 0;
