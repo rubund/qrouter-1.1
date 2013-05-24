@@ -117,8 +117,8 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
        if (Pr->flags & PR_SOURCE) {
 	  result = 1;				// Node is already connected!
        }
-       else if (((Pr->prdata.net == node->netnum) || (stage == (u_char)2)) &&
-			!(Pr->flags & newflags)) {
+       else if (((Pr->prdata.net == node->netnum) || (stage == (u_char)2))
+			&& !(Pr->flags & newflags)) {
 
 	  // Do the source and dest nodes need to be marked routable?
 	  Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
@@ -150,7 +150,7 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
 	     if (y > bbox->y2) bbox->y2 = y;
 	  }
        }
-       else if (Pr->prdata.net < Numnets) obsnet++;
+       else if ((Pr->prdata.net < Numnets) && (Pr->prdata.net > 0)) obsnet++;
     }
 
     // Do the same for point in the halo around the tap, but only if
@@ -200,7 +200,7 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
 	     if (y > bbox->y2) bbox->y2 = y;
 	  }
        }
-       else if (Pr->prdata.net < Numnets) obsnet++;
+       else if ((Pr->prdata.net < Numnets) && (Pr->prdata.net > 0)) obsnet++;
     }
 
     // In the case that no valid tap points were found,	if we're on the

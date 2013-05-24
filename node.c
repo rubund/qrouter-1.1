@@ -287,7 +287,7 @@ void create_obstructions_from_gates()
 {
     GATE g;
     DSEG ds;
-    int i, gridx, gridy, no_net, *obsptr;
+    int i, gridx, gridy, *obsptr;
     double dx, dy, delta[MAX_LAYERS];
     float dist;
 
@@ -338,7 +338,6 @@ void create_obstructions_from_gates()
        for (i = 0; i < g->nodes; i++) {
 	  if (g->netnum[i] == 0) {	/* Unconnected node */
 	     // Diagnostic, and power bus handling
-	     no_net = NO_NET;
 	     if (g->node[i]) {
 		if (vddnet && !strncmp(g->node[i], vddnet, strlen(vddnet)))
 		   continue;
