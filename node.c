@@ -491,7 +491,9 @@ void create_obstructions_from_nodes()
 				continue;
 			     }
 
-			     if ((orignet & ~PINOBSTRUCTMASK) != (u_int)0) {
+			     if (!(orignet & NO_NET) &&
+					((orignet & ~PINOBSTRUCTMASK) != (u_int)0)) {
+
 				// Net was assigned to other net, but is inside
 				// this pin's geometry.  Declare point to be
 				// unroutable, as it is too close to both pins.
@@ -605,6 +607,14 @@ void create_obstructions_from_nodes()
 				// blocking the grid point.  If so, then we set the
 				// Stub[] distance to move the tap away from the
 				// obstruction to resolve the DRC error.
+
+				// Make sure we have marked this as a node.
+			        Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= node;
+			        Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= node;
+			        Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= (u_int)node->netnum;
 
 				if (orignet & OBSTRUCT_N) {
 			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]

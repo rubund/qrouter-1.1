@@ -1635,8 +1635,13 @@ DefRead(char *inName)
 			PitchX[curlayer + 1] = PitchX[curlayer];
 		    llx = start;
 		    urx = start + step * channels;
-		    if (llx < Xlowerbound) Xlowerbound = llx / oscale;
-		    if (urx > Xupperbound) Xupperbound = urx / oscale;
+		    // Fix, 5/24/2013:  Set bounds according to the tracks,
+		    // since we really don't care about the die area.  But,
+		    // we should make sure this is consistent across layers. . .
+		    // if (llx < Xlowerbound)
+			Xlowerbound = llx / oscale;
+		    // if (urx > Xupperbound)
+			Xupperbound = urx / oscale;
 		}
 		else {
 		    Vert[curlayer] = 0;
@@ -1646,8 +1651,10 @@ DefRead(char *inName)
 			PitchY[curlayer + 1] = PitchY[curlayer];
 		    lly = start;
 		    ury = start + step * channels;
-		    if (lly < Ylowerbound) Ylowerbound = lly / oscale;
-		    if (ury > Yupperbound) Yupperbound = ury / oscale;
+		    // if (lly < Ylowerbound)
+			Ylowerbound = lly / oscale;
+		    // if (ury > Yupperbound)
+			Yupperbound = ury / oscale;
 		}
 		LefEndStatement(f);
 		break;
