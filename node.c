@@ -644,9 +644,10 @@ void create_obstructions_from_nodes()
 					|= (STUBROUTE_EW | OFFSET_TAP);
 				}
 
-				// Diagnostic, to be removed
-				fprintf(stderr, "Port overlaps obstruction at"
-					" grid %d %d, position %g %g\n",
+				// Diagnostic
+				if (Verbose > 0)
+				   fprintf(stderr, "Port overlaps obstruction"
+					" at grid %d %d, position %g %g\n",
 					gridx, gridy, dx, dy);
 			     }
 
