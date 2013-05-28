@@ -126,7 +126,13 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
 	  // If we got here, we're on the rip-up stage, and there
 	  // is an existing route completely blocking the terminal.
 	  // So we will route over it and flag it as a collision.
-	  if (Pr->prdata.net != node->netnum) Pr->flags |= PR_CONFLICT;
+	  if (Pr->prdata.net != node->netnum) {
+	     if (Pr->prdata.net == NO_NET | OBSTRUCT_MASK)
+		continue;
+	     else
+	        Pr->flags |= PR_CONFLICT;
+	  }
+	
 
 	  Pr->prdata.cost = (newflags == PR_SOURCE) ? 0 : MAXRT;
 
@@ -163,9 +169,14 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
 
        // Don't process extended areas if they coincide with other nodes.
 
-       if (Nodeloc[lay][OGRID(x, y, lay)] != (NODE)NULL &&
-		Nodeloc[lay][OGRID(x, y, lay)] != node)
-	  continue;
+       // if (Nodeloc[lay][OGRID(x, y, lay)] != (NODE)NULL &&
+       //	Nodeloc[lay][OGRID(x, y, lay)] != node)
+       // continue;
+
+       if (Nodeloc[lay][OGRID(x, y, lay)] == (NODE)NULL ||
+       	   Nodeloc[lay][OGRID(x, y, lay)] != node)
+       continue;
+	
 
        Pr = &Obs2[lay][OGRID(x, y, lay)];
        if (Pr->flags & PR_SOURCE) {
