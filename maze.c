@@ -120,19 +120,20 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
        else if (((Pr->prdata.net == node->netnum) || (stage == (u_char)2))
 			&& !(Pr->flags & newflags)) {
 
-	  // Do the source and dest nodes need to be marked routable?
-	  Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
-
 	  // If we got here, we're on the rip-up stage, and there
 	  // is an existing route completely blocking the terminal.
 	  // So we will route over it and flag it as a collision.
+
 	  if (Pr->prdata.net != node->netnum) {
-	     if (Pr->prdata.net == NO_NET | OBSTRUCT_MASK)
+	     if ((Pr->prdata.net == (NO_NET | OBSTRUCT_MASK)) ||
+			(Pr->prdata.net == NO_NET))
 		continue;
 	     else
 	        Pr->flags |= PR_CONFLICT;
 	  }
-	
+
+	  // Do the source and dest nodes need to be marked routable?
+	  Pr->flags |= (newflags == PR_SOURCE) ? newflags : (newflags | PR_COST);
 
 	  Pr->prdata.cost = (newflags == PR_SOURCE) ? 0 : MAXRT;
 
