@@ -1854,7 +1854,7 @@ enum lef_layer_keys {LEF_LAYER_TYPE=0, LEF_LAYER_WIDTH, LEF_LAYER_SPACING,
 	LEF_VIA_DEFAULT, LEF_VIA_LAYER, LEF_VIA_RECT,
 	LEF_VIARULE_VIA, LEF_LAYER_END};
 
-enum lef_spacing_keys {LEF_SPACING_RANGE=0};
+enum lef_spacing_keys {LEF_SPACING_RANGE=0, LEF_END_LAYER_SPACING};
 
 void
 LefReadLayerSection(f, lname, mode, lefl)
@@ -1895,6 +1895,7 @@ LefReadLayerSection(f, lname, mode, lefl)
 
     static char *spacing_keys[] = {
 	"RANGE",
+	";",
 	NULL
     };
 
@@ -1985,8 +1986,8 @@ LefReadLayerSection(f, lname, mode, lefl)
 		// For now we will ignore spacing ranges. . .
 		if (typekey != LEF_SPACING_RANGE)
 		    lefl->info.route.spacing = dvalue / (double)oscale;
-
-		LefEndStatement(f);
+		if (typekey != LEF_END_LAYER_SPACING)
+		    LefEndStatement(f);
 		break;
 	    case LEF_LAYER_PITCH:
 		token = LefNextToken(f, TRUE);
