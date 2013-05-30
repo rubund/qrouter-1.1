@@ -1138,7 +1138,7 @@ int route_segs(NET net, ROUTE rt, u_char stage)
   for (i = 0; i < Num_layers; i++) {
       for (x = 0; x < NumChannelsX[i]; x++) {
 	  for (y = 0; y < NumChannelsY[i]; y++) {
-	      netnum = Obs[i][OGRID(x, y, i)];
+	      netnum = Obs[i][OGRID(x, y, i)] & (~BLOCKED_MASK);
 	      Pr = &Obs2[i][OGRID(x, y, i)];
 	      if (netnum != 0) {
 	         Pr->flags = 0;		// Clear all flags
