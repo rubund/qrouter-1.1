@@ -301,6 +301,7 @@ main(int argc, char *argv[])
 
    create_obstructions_from_gates();
    create_obstructions_from_nodes();
+   tap_to_tap_interactions();
    create_obstructions_from_variable_pitch();
    adjust_stub_lengths();
    find_route_blocks();
@@ -1826,10 +1827,10 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 	       // Additional offset for vias vs. plain route layer
 	       if (seg->segtype & ST_VIA) {
 		  if (offset1 < 0)
-		     offset1 -= (LefGetViaWidth(seg->layer, seg->layer, 0)
+		     offset1 -= 0.5 * (LefGetViaWidth(seg->layer, seg->layer, 0)
 					- LefGetRouteWidth(seg->layer));
 		  else if (offset1 > 0)
-		     offset1 += (LefGetViaWidth(seg->layer, seg->layer, 0)
+		     offset1 += 0.5 * (LefGetViaWidth(seg->layer, seg->layer, 0)
 					- LefGetRouteWidth(seg->layer));
 	       }
 
@@ -1856,10 +1857,10 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 	       // Additional offset for vias vs. plain route layer
 	       if (seg->segtype & ST_VIA) {
 		  if (offset2 < 0)
-		     offset2 -= (LefGetViaWidth(seg->layer, seg->layer, 0)
+		     offset2 -= 0.5 * (LefGetViaWidth(seg->layer, seg->layer, 0)
 					- LefGetRouteWidth(seg->layer));
 		  else if (offset2 > 0)
-		     offset2 += (LefGetViaWidth(seg->layer, seg->layer, 0)
+		     offset2 += 0.5 * (LefGetViaWidth(seg->layer, seg->layer, 0)
 					- LefGetRouteWidth(seg->layer));
 	       }
 
@@ -1903,9 +1904,15 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		     else if (y == y2) {
 			horizontal = TRUE;
 		     }
-		     else {
-			fprintf(stderr, "Warning:  non-"
-					"Manhattan wire in route\n");
+		     else if (Verbose > 0) {
+			// NOTE:  This is a development diagnostic.  The
+			// occasional non-Manhanhattan route is due to a
+			// tap offset and is corrected automatically by
+			// making an L-bend in the wire.
+
+		     	fflush(stdout);
+			fprintf(stderr, "Warning:  non-Manhattan wire in route"
+				" at (%d %d) to (%d %d)\n", x, y, x2, y2);
 		     }
 		  }
 		  rt->output = TRUE;

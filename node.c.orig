@@ -705,23 +705,86 @@ void create_obstructions_from_nodes()
 		gridx = (int)((ds->x1 - Xlowerbound - delta[ds->layer])
 			/ PitchX[ds->layer]) - 1;
 
+		// Check of position to west for offset east that puts it
+		// in the interaction area.  NOTE:  gridy needs to be
+		// defined, do for gridy in range of ds->y1 to ds->y2
+#if 0
+		if (gridx > 0) {
+		   k = Obs[ds->layer][OGRID(gridx - 1, gridy, ds->layer)];
+		   if (k & (OFFSET_TAP | STUBROUTE_EW) ==
+					(OFFSET_TAP | STUBROUTE_EW)) {
+		      dist = Stub[ds->layer][OGRID(gridx - 1, gridy, ds->layer)];
+		      dx = ((gridx - 1) * PitchX[ds->layer]) + Xlowerbound;
+		      if ((dx + dist) > (ds->x1 - viaclear[ds->layer]))
+			    disable_gridpos(gridx - 1, gridy, ds->layer);
+		   }
+		}
+#endif
+
 		while (1) {
 		   dx = (gridx * PitchX[ds->layer]) + Xlowerbound;
 
 		   if (dx > (ds->x2 + delta[ds->layer]) ||
-				gridx >= NumChannelsX[ds->layer])
+				gridx >= NumChannelsX[ds->layer]) {
+		      // Outside of interaction area, *unless* point to
+		      // the east has been marked as being offset west.
+		      // If the offset west puts it in the interaction
+		      // area, then we mark that point unroutable.
+		      // Ditto comment above about gridy needing to be
+		      // defined, and in range. . .
+#if 0
+		      if (gridx < NumChannelsX[ds->layer]) {
+			 k = Obs[ds->layer][OGRID(gridx, gridy, ds->layer)];
+			 if (k & (OFFSET_TAP | STUBROUTE_EW) ==
+					(OFFSET_TAP | STUBROUTE_EW)) {
+			    dist = Stub[ds->layer][OGRID(gridx, gridy, ds->layer)];
+			    if ((dx + dist) < (ds->x2 + viaclear[ds->layer]))
+			       disable_gridpos(gridx, gridy, ds->layer);
+			 }
+		      }
+#endif
 		      break;
-
+		   }
 		   else if (dx >= (ds->x1 - delta[ds->layer]) && gridx >= 0) {
 		      gridy = (int)((ds->y1 - Ylowerbound - delta[ds->layer])
 				/ PitchY[ds->layer]) - 1;
 
+		      // Check of position to south for offset north
+		      // that puts it in the interaction area.
+		      if (gridy > 0) {
+			 k = Obs[ds->layer][OGRID(gridx, gridy - 1, ds->layer)];
+			 if (k & (OFFSET_TAP | STUBROUTE_NS) ==
+					(OFFSET_TAP | STUBROUTE_NS)) {
+			    dist = Stub[ds->layer][OGRID(gridx, gridy - 1,
+					ds->layer)];
+		            dy = ((gridy - 1) * PitchY[ds->layer]) + Ylowerbound;
+			    if ((dy + dist) > (ds->y1 - viaclear[ds->layer]))
+			       disable_gridpos(gridx, gridy - 1, ds->layer);
+			 }
+		      }
+
 		      while (1) {
 		         dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
 		         if (dy > (ds->y2 + delta[ds->layer]) ||
-				gridy >= NumChannelsY[ds->layer])
-			    break;
+				gridy >= NumChannelsY[ds->layer]) {
 
+			    // Outside of interaction area, *unless* point to
+			    // the north has been marked as being offset south.
+			    // If the offset south puts it in the interaction
+			    // area, then we mark that point unroutable.
+
+			    if (gridy < NumChannelsY[ds->layer]) {
+			       k = Obs[ds->layer][OGRID(gridx, gridy, ds->layer)];
+			       if (k & (OFFSET_TAP | STUBROUTE_NS) ==
+						(OFFSET_TAP | STUBROUTE_NS)) {
+				  dist = Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)];
+				  if ((dy + dist) < (ds->y2 + viaclear[ds->layer]))
+				     disable_gridpos(gridx, gridy, ds->layer);
+			       }
+			    }
+			    break;
+			 }
 		         if (dy >= (ds->y1 - delta[ds->layer]) && gridy >= 0) {
 			    xdist = 0.5 * LefGetRouteWidth(ds->layer);
 
@@ -991,10 +1054,6 @@ void tap_to_tap_interactions()
 
     for (i = 0; i < Num_layers; i++) {
 	delta[i] = 0.5 * LefGetViaWidth(i, i, 0) + LefGetRouteSpacing(i);
-	// NOTE:  Extra space is how much vias get shifted relative to the
-	// specified offset distance to account for the via size being larger
-	// than the route width.
-	delta[i] += 0.5 * (LefGetViaWidth(i, i, 0) - LefGetRouteSpacing(i));
     }
 
     for (g = Nlgates; g; g = g->next) {
@@ -1007,14 +1066,14 @@ void tap_to_tap_interactions()
 
              for (ds = g->taps[i]; ds; ds = ds->next) {
 
-		mingridx = (int)((ds->x1 - Xlowerbound) / PitchX[ds->layer]) - 1;
+		mingridx = (int)((ds->x1 - Xlowerbound) / PitchX[ds->layer]) - 2;
 		if (mingridx < 0) mingridx = 0;
-		maxgridx = (int)((ds->x2 - Xlowerbound) / PitchX[ds->layer]) + 2;
+		maxgridx = (int)((ds->x1 - Xlowerbound) / PitchX[ds->layer]) + 2;
 		if (maxgridx >= NumChannelsX[ds->layer])
 		   maxgridx = NumChannelsX[ds->layer] - 1;
-		mingridy = (int)((ds->y1 - Ylowerbound) / PitchY[ds->layer]) - 1;
+		mingridy = (int)((ds->y1 - Ylowerbound) / PitchY[ds->layer]) - 2;
 		if (mingridy < 0) mingridy = 0;
-		maxgridy = (int)((ds->y2 - Ylowerbound) / PitchY[ds->layer]) + 2;
+		maxgridy = (int)((ds->y1 - Ylowerbound) / PitchY[ds->layer]) + 2;
 		if (maxgridy >= NumChannelsY[ds->layer])
 		   maxgridy = NumChannelsY[ds->layer] - 1;
 
@@ -1044,11 +1103,11 @@ void tap_to_tap_interactions()
 			    de.y1 = dy - delta[ds->layer];
 			    de.y2 = dy + delta[ds->layer];
 
-			    if (offset == (STUBROUTE_NS | OFFSET_TAP)) {
+			    if (offset == STUBROUTE_NS) {
 			       de.y1 += dist;
 			       de.y2 += dist;
 			    }
-			    else if (offset == (STUBROUTE_EW | OFFSET_TAP)) {
+			    else if (offset == STUBROUTE_EW) {
 			       de.x1 += dist;
 			       de.x2 += dist;
 			    }
