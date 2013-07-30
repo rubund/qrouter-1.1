@@ -42,7 +42,7 @@ set_powerbus_to_net(int netnum)
        for (lay = 0; lay < Num_layers; lay++)
           for (x = 0; x < NumChannelsX[lay]; x++)
 	     for (y = 0; y < NumChannelsY[lay]; y++)
-		if (Obs[lay][OGRID(x, y, lay)] == netnum) {
+		if ((Obs[lay][OGRID(x, y, lay)] & NETNUM_MASK) == netnum) {
 		   Pr = &Obs2[lay][OGRID(x, y, lay)];
 		   if (!(Pr->flags & PR_SOURCE)) {
 		      Pr->flags |= (PR_TARGET | PR_COST);
