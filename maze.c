@@ -737,7 +737,8 @@ void writeback_segment(SEG seg, int netnum)
 /*	    second stage routing, in which case we fill the	*/
 /*	    route structure but don't modify the Obs array.	*/
 /*								*/
-/*  RETURNS: 							*/
+/*  RETURNS: TRUE on success, FALSE on stacked via failure	*/
+/*	    or failure to find a terminal.			*/
 /*  SIDE EFFECTS: Obs update, RT llseg added			*/
 /*--------------------------------------------------------------*/
 
@@ -822,7 +823,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
       PROUTE *pri, *pri2;
       int stacks = 1, stackheight;
       int cx, cy, cl;
-      int mincost, minx, miny, ci, ci2;
+      int mincost, minx, miny, ci, ci2, collide, cost;
 
       while (stacks != 0) {	// Keep doing until all illegal stacks are gone
 	 stacks = 0;
@@ -841,7 +842,8 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 	       b = a->next;
 	       if (b == NULL) break;
 	    }
-	    if (stackheight > StackedContacts) {	// Illegal stack found
+	    collide = FALSE;
+	    while (stackheight > StackedContacts) {	// Illegal stack found
 	       stacks++;
 
 	       // Try to move the second contact in the path
@@ -857,40 +859,64 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 	       dx = cx + 1;	// Check to the right
 	       pri = &Obs2[cl][OGRID(dx, cy, cl)];
 	       pflags = pri->flags;
+	       cost = pri->prdata.cost;
+	       if (collide && !(pflags & (PR_COST | PR_SOURCE)) &&
+			(pri->prdata.net < Numnets)) {
+		  pflags = 0;
+		  cost = ConflictCost;
+	       }
 	       if (pflags & PR_COST) {
 		  pflags &= ~PR_COST;
-		  if ((pflags & PR_PRED_DMASK) != PR_PRED_NONE &&
-				pri->prdata.cost < mincost) {
+		  if ((pflags & PR_PRED_DMASK) != PR_PRED_NONE && cost < mincost) {
 	             pri2 = &Obs2[dl][OGRID(dx, cy, dl)];
 		     p2flags = pri2->flags;
 		     if (p2flags & PR_COST) {
 			p2flags &= ~PR_COST;
 		        if ((p2flags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri2->prdata.cost < MAXRT) {
-		           mincost = pri->prdata.cost;
+		           mincost = cost;
 		           minx = dx;
 		           miny = cy;
 			}
+		     }
+		     else if (collide && !(p2flags & (PR_COST | PR_SOURCE)) &&
+				(pri2->prdata.net < Numnets) &&
+				((cost + ConflictCost) < mincost)) {
+			mincost = cost + ConflictCost;
+			minx = dx;
+			miny = dy;
 		     }
 		  }
 	       }
 	       dx = cx - 1;	// Check to the left
 	       pri = &Obs2[cl][OGRID(dx, cy, cl)];
 	       pflags = pri->flags;
+	       cost = pri->prdata.cost;
+	       if (collide && !(pflags & (PR_COST | PR_SOURCE)) &&
+			(pri->prdata.net < Numnets)) {
+		  pflags = 0;
+		  cost = ConflictCost;
+	       }
 	       if (pflags & PR_COST) {
 		  pflags &= ~PR_COST;
-		  if ((pflags & PR_PRED_DMASK) != PR_PRED_NONE &&
-				pri->prdata.cost < mincost) {
+		  if ((pflags & PR_PRED_DMASK) != PR_PRED_NONE && cost < mincost) {
 	             pri2 = &Obs2[dl][OGRID(dx, cy, dl)];
 		     p2flags = pri2->flags;
 		     if (p2flags & PR_COST) {
 			p2flags &= ~PR_COST;
 		        if ((p2flags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri2->prdata.cost < MAXRT) {
-		           mincost = pri->prdata.cost;
+		           mincost = cost;
 		           minx = dx;
 		           miny = cy;
 			}
+		     }
+		     else if (collide && !(p2flags & (PR_COST | PR_SOURCE)) &&
+				(pri2->prdata.net < Numnets) &&
+				((cost + ConflictCost) < mincost)) {
+			mincost = cost + ConflictCost;
+			minx = dx;
+			miny = dy;
 		     }
 		  }
 	       }
@@ -898,20 +924,32 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 	       dy = cy + 1;	// Check north
 	       pri = &Obs2[cl][OGRID(cx, dy, cl)];
 	       pflags = pri->flags;
+	       cost = pri->prdata.cost;
+	       if (collide && !(pflags & (PR_COST | PR_SOURCE)) &&
+			(pri->prdata.net < Numnets)) {
+		  pflags = 0;
+		  cost = ConflictCost;
+	       }
 	       if (pflags & PR_COST) {
 		  pflags &= ~PR_COST;
-		  if ((pflags & PR_PRED_DMASK) != PR_PRED_NONE &&
-				pri->prdata.cost < mincost) {
+		  if ((pflags & PR_PRED_DMASK) != PR_PRED_NONE && cost < mincost) {
 	             pri2 = &Obs2[dl][OGRID(cx, dy, dl)];
 		     p2flags = pri2->flags;
 		     if (p2flags & PR_COST) {
 			p2flags &= ~PR_COST;
 		        if ((p2flags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri2->prdata.cost < MAXRT) {
-		           mincost = pri->prdata.cost;
+		           mincost = cost;
 		           minx = cx;
 		           miny = dy;
 			}
+		     }
+		     else if (collide && !(p2flags & (PR_COST | PR_SOURCE)) &&
+				(pri2->prdata.net < Numnets) &&
+				((cost + ConflictCost) < mincost)) {
+			mincost = cost + ConflictCost;
+			minx = dx;
+			miny = dy;
 		     }
 		  }
 	       }
@@ -919,20 +957,32 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 	       dy = cy - 1;	// Check south
 	       pri = &Obs2[cl][OGRID(cx, dy, cl)];
 	       pflags = pri->flags;
+	       cost = pri->prdata.cost;
+	       if (collide && !(pflags & (PR_COST | PR_SOURCE)) &&
+			(pri->prdata.net < Numnets)) {
+		  pflags = 0;
+		  cost = ConflictCost;
+	       }
 	       if (pflags & PR_COST) {
 		  pflags &= ~PR_COST;
-		  if (pflags & PR_PRED_DMASK != PR_PRED_NONE &&
-				pri->prdata.cost < mincost) {
+		  if (pflags & PR_PRED_DMASK != PR_PRED_NONE && cost < mincost) {
 	             pri2 = &Obs2[dl][OGRID(cx, dy, dl)];
 		     p2flags = pri2->flags;
 		     if (p2flags & PR_COST) {
 		        p2flags &= ~PR_COST;
 		        if ((p2flags & PR_PRED_DMASK) != PR_PRED_NONE &&
 				pri2->prdata.cost < MAXRT) {
-		           mincost = pri->prdata.cost;
+		           mincost = cost;
 		           minx = cx;
 		           miny = dy;
 			}
+		     }
+		     else if (collide && !(p2flags & (PR_COST | PR_SOURCE)) &&
+				(pri2->prdata.net < Numnets) &&
+				((cost + ConflictCost) < mincost)) {
+			mincost = cost + ConflictCost;
+			minx = dx;
+			miny = dy;
 		     }
 		  }
 	       }
@@ -974,6 +1024,8 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 		  }
 		  else
 		     newlr2->next = lrppre;
+
+		  break;	// Found a solution;  we're done.
 	       }
 	       else {
 
@@ -1114,11 +1166,35 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 		     }
 		     else
 			newlr2->next = lrprev;
+		
+		     break;	// Found a solution;  we're done.
+		  }
+		  else if (stage == 0) {
+		     // On the first stage, we call it an error and move
+		     // on to the next net.  This is a bit conservative,
+		     // but it works because failing to remove a stacked
+		     // via is a rare occurrance.
+
+		     printf("Failed to remove stacked via at grid point "
+				"%d %d.\n", lrcur->x1, lrcur->y1);
+		     stacks = 0;
+		     return FALSE;
 		  }
 		  else {
-		     printf("Error:  Failed to remove stacked via at grid "
-				"point %d %d!\n", lrcur->x1, lrcur->y1);
-		     stacks = 0;
+		     if (collide == TRUE) {
+		        printf("Failed to remove stacked via at grid point "
+				"%d %d;  position may not be routable.\n",
+				lrcur->x1, lrcur->y1);
+			stacks = 0;
+			return FALSE;
+		     }
+
+		     // On the second stage, we will run through the
+		     // search again, but allow overwriting other
+		     // nets, which will be treated like other colliding
+		     // nets in the regular route path search.
+
+		     collide = TRUE;
 		  }
 	       }
 	    }
@@ -1284,6 +1360,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
    }
 
    // This block is not reachable
+   printf("\nThis block is not reachable!\n");
    return FALSE;
 
 } /* commit_proute() */

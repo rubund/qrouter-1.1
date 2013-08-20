@@ -235,7 +235,6 @@ struct net_ {
 
 struct netlist_ {
    NETLIST next;
-   int idx;
    NET net;
 };
 

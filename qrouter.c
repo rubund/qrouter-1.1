@@ -131,6 +131,24 @@ int allocate_obs_array()
 }
 
 /*--------------------------------------------------------------*/
+/* countlist ---						*/
+/*   Count the number of entries in a simple linked list	*/
+/*--------------------------------------------------------------*/
+
+int
+countlist(NETLIST net)
+{
+   NETLIST nptr = net;
+   int count = 0;
+
+   while (nptr != NULL) {
+      count++;
+      nptr = nptr->next;
+   }
+   return count;
+}
+
+/*--------------------------------------------------------------*/
 /* main - program entry point, parse command line		*/
 /*								*/
 /*   ARGS: argc (count) argv, command line 			*/
@@ -144,6 +162,7 @@ main(int argc, char *argv[])
    int	i, j, result;
    int length, width;
    FILE *l, *configFILEptr, *fptr;
+   NETLIST nl;
    u_int u;
    static char configdefault[] = CONFIGFILENAME;
    char *configfile = configdefault;
@@ -357,9 +376,9 @@ main(int argc, char *argv[])
       fprintf(stdout, "No failed routes!\n");
    else {
       if (FailedNets != (NETLIST)NULL)
-          fprintf(stdout, "Failed net routes: %d\n", FailedNets->idx);
+          fprintf(stdout, "Failed net routes: %d\n", countlist(FailedNets));
       if (Abandoned != (NETLIST)NULL)
-          fprintf(stdout, "Abandoned net routes: %d\n", Abandoned->idx);
+          fprintf(stdout, "Abandoned net routes: %d\n", countlist(Abandoned));
    }
    fprintf(stdout, "----------------------------------------------\n");
 
@@ -375,26 +394,44 @@ main(int argc, char *argv[])
       fprintf(stdout, "No failed routes!\n");
    else {
       if (FailedNets != (NETLIST)NULL) {
-	 /* This should not happen;  should be cleaned up by dosecondstage() */
-         fprintf(stdout, "Failed net routes: %d\n", FailedNets->idx);
-         fprintf(stdout, "See file \"failed\" for list of failing nets.\n");
-      }
-      if (Abandoned != (NETLIST)NULL) {
-         fprintf(stdout, "Abandoned net routes: %d\n", Abandoned->idx);
-         fprintf(stdout, "See file \"failed\" for list of abandoned nets.\n");
+         fprintf(stdout, "Failed net routes: %d\n", countlist(FailedNets));
+	 fprintf(stdout, "List of failed nets follows:\n");
 
-	 if (Failfptr) fprintf(Failfptr,
-			"\n------------------------------------------\n");
+	 // Make sure FailedNets is cleaned up as we output the failed nets
+
+	 if (Failfptr)
+	    fprintf(Failfptr, "\n------------------------------------------\n");
 	 if (!Failfptr) openFailFile();
 
+ 	 while (FailedNets) {
+	    net = FailedNets->net;
+	    fprintf(Failfptr, "Final:  Failed to route net %s\n", net->netname);
+	    fprintf(stdout, " %s\n", net->netname);
+	    nl = FailedNets->next;
+	    free(FailedNets);
+	    FailedNets = nl;
+	 }
+	 fprintf(stdout, "\n");
+      }
+      if (Abandoned != (NETLIST)NULL) {
+         fprintf(stdout, "Abandoned net routes: %d\n", countlist(Abandoned));
+	 fprintf(stdout, "List of abandoned nets follows:\n");
+
+	 if (Failfptr)
+	    fprintf(Failfptr, "\n------------------------------------------\n");
+	 if (!Failfptr) openFailFile();
+
+	 // Make sure Abandoned is cleaned up as we output the failed nets
+
 	 while (Abandoned) {
-	    NETLIST nl;
 	    net = Abandoned->net;
 	    fprintf(Failfptr, "Final:  Abandoned net %s\n", net->netname);
+	    fprintf(stdout, " %s\n", net->netname);
 	    nl = Abandoned->next;
 	    free(Abandoned);
 	    Abandoned = nl;
 	 }
+	 fprintf(stdout, "\n");
       }
    }
    fprintf(stdout, "----------------------------------------------\n");
@@ -676,9 +713,11 @@ NET getnettoroute(int order)
 void
 dosecondstage()
 {
-   int i, result;
+   int i, result, maxtries;
    NET net;
    NETLIST nl, nl2, fn;
+
+   maxtries = (FailedNets) ? TotalRoutes + countlist(FailedNets) * 8 : 0;
 
    while (FailedNets != NULL) {
 
@@ -729,10 +768,6 @@ dosecondstage()
 	    // Add the net to the "abandoned" list
 	    nl = (NETLIST)malloc(sizeof(struct netlist_));
 	    nl->net = net;
-	    if (Abandoned != (NETLIST)NULL)
-	       nl->idx = Abandoned->idx + 1;
-	    else
-	       nl->idx = 1;
 	    nl->next = Abandoned;
 	    Abandoned = nl;
 
@@ -780,20 +815,16 @@ dosecondstage()
 
       // Now we copy the net we routed above into Obs
       writeback_all_routes(net);
-   }
 
-   // Make sure FailedNets is cleaned up, in case we broke out
-   // of the loop with an error condition.
+      // Failsafe---if we have been looping enough times to exceed
+      // maxtries (which is set to 8 route attempts per original failed
+      // net), then we give up.  Qrouter is almost certainly hopelessly
+      // stuck at this point.
 
-   if (Failfptr) fprintf(Failfptr, "\n------------------------------------------\n");
-   if (FailedNets && !Failfptr) openFailFile();
-
-   while (FailedNets) {
-      net = FailedNets->net;
-      fprintf(Failfptr, "Final:  Failed to route net %s\n", net->netname);
-      nl = FailedNets->next;
-      free(FailedNets);
-      FailedNets = nl;
+      if (TotalRoutes >= maxtries) {
+	 fprintf(stderr, "\nQrouter is stuck, abandoning remaining routes.\n");
+	 break;
+      }
    }
 }
 
@@ -1091,10 +1122,6 @@ int doroute(NET net, u_char stage)
      if (result < 0) {		// Route failure.
 	nlist = (NETLIST)malloc(sizeof(struct netlist_));
 	nlist->net = net;
-	if (FailedNets != NULL)
-	   nlist->idx = FailedNets->idx + 1;
-	else
-	   nlist->idx = 1;
 	nlist->next = FailedNets;
 	FailedNets = nlist;
 	return -1;
@@ -1523,7 +1550,7 @@ int route_segs(NET net, ROUTE rt, u_char stage)
 	curpt.x = best.x;
 	curpt.y = best.y;
 	curpt.lay = best.lay;
-	commit_proute(rt, &curpt, stage);
+	if (commit_proute(rt, &curpt, stage) == FALSE) break;
 	fprintf(stdout, "\nCommit to a route of cost %d\n", best.cost);
 	fprintf(stdout, "Between positions (%d %d) and (%d %d)\n",
 		best.x, best.y, curpt.x, curpt.y);
@@ -2178,10 +2205,10 @@ void emit_routes(char *filename, double oscale)
        fputs(line, Cmd);
     }
     fputs(line, Cmd);	// Write the NETS line
-    if (numnets != (Numnets - MIN_NET_NUMBER)) {
+    if (numnets != (Numnets - MIN_NET_NUMBER + 1)) {
 	fflush(stdout);
         fprintf(stderr, "emit_routes():  DEF file has %d nets, but we want"
-		" to write %d\n", numnets, Numnets - MIN_NET_NUMBER);
+		" to write %d\n", numnets, Numnets - MIN_NET_NUMBER + 1);
 	if (numnets > Numnets) numnets = Numnets;
     }
 
