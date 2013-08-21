@@ -745,7 +745,7 @@ void writeback_segment(SEG seg, int netnum)
 int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 {
    SEG  seg, lseg;
-   int  i, j, k, lay;
+   int  i, j, k, lay, lay2;
    int  x, y;
    int  dx, dy, dl;
    u_int netnum, netobs1, netobs2, dir1, dir2;
@@ -1269,8 +1269,10 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 
       // now fill in the Obs structure with this route....
 
+      lay2 = (seg->segtype & ST_VIA) ? seg->layer + 1 : seg->layer;
+
       netobs1 = Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)];
-      netobs2 = Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)];
+      netobs2 = Obs[lay2][OGRID(seg->x2, seg->y2, lay2)];
 
       dir1 = netobs1 & PINOBSTRUCTMASK;
       dir2 = netobs2 & PINOBSTRUCTMASK;
@@ -1291,6 +1293,13 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 	    first = (u_char)0;
 	    Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] |= dir1;
          }
+	 else if (first && dir2 && (seg->segtype & ST_VIA) && lrprev &&
+			(lrprev->layer != lay2)) {
+	    // This also applies to vias at the beginning of a route
+	    // if the path goes down instead of up (can happen on pins,
+	    // in particular)
+	    Obs[lay2][OGRID(seg->x1, seg->y1, lay2)] |= dir2;
+	 }
       }
 
       // Keep stub information on obstructions that have been routed
@@ -1299,7 +1308,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
       if (netobs1 > Numnets)
 	  Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] |= dir1;
       if (netobs2 > Numnets)
-	  Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] |= dir2;
+	  Obs[lay2][OGRID(seg->x2, seg->y2, lay2)] |= dir2;
 
       // An offset route end on the previous segment, if it is a via, needs
       // to carry over to this one, if it is a wire route.
@@ -1338,7 +1347,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
       if (lrprev == NULL) {
 
          if (dir2 && (stage == (u_char)0)) {
-	    Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] |= dir2;
+	    Obs[lay2][OGRID(seg->x2, seg->y2, lay2)] |= dir2;
          }
 
 	 // Before returning, set *ept to the endpoint
@@ -1379,16 +1388,21 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 int writeback_route(ROUTE rt)
 {
    SEG seg;
-   int  i;
+   int  i, lay2;
    u_int netnum, dir1, dir2;
    u_char first = (u_char)1;
 
    netnum = rt->netnum | ROUTED_NET;
    for (seg = rt->segments; seg; seg = seg->next) {
 
-      /* Save stub route information at segment ends */
+      /* Save stub route information at segment ends. 		*/
+      /* NOTE:  Where segment end is a via, make sure we are	*/
+      /* placing the segment end on the right metal layer!	*/
+
+      lay2 = (seg->segtype & ST_VIA) ? seg->layer + 1 : seg->layer;
+
       dir1 = Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] & PINOBSTRUCTMASK;
-      dir2 = Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] & PINOBSTRUCTMASK;
+      dir2 = Obs[lay2][OGRID(seg->x2, seg->y2, lay2)] & PINOBSTRUCTMASK;
 
       writeback_segment(seg, netnum);
 
@@ -1398,7 +1412,7 @@ int writeback_route(ROUTE rt)
       }
 
       if (!seg->next && dir2) {
-	 Obs[seg->layer][OGRID(seg->x2, seg->y2, seg->layer)] |= dir2;
+	 Obs[lay2][OGRID(seg->x2, seg->y2, lay2)] |= dir2;
       }
    }
    return TRUE;

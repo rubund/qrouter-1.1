@@ -1680,6 +1680,15 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 	 lastseg = saveseg = seg;
 	 layer = seg->layer;
 	 if (seg) {
+
+	    // It is rare but possible to have a stub route off of an
+	    // endpoint via, so check this case, and use the layer type
+	    // of the via top if needed.
+
+	    if ((seg->segtype & ST_VIA) && seg->next && (seg->next->layer <=
+			seg->layer))
+	       layer++;
+
 	    dir1 = Obs[layer][OGRID(seg->x1, seg->y1, layer)];
 	    dir1 &= PINOBSTRUCTMASK;
 	    if (dir1 && !(seg->segtype & ST_OFFSET_START)) {
@@ -1828,7 +1837,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 	       }
 
 	       if (cancel == FALSE) {
-		  pathstart(Cmd, seg->layer, x2, y2, special, oscale);
+		  pathstart(Cmd, layer, x2, y2, special, oscale);
 		  pathto(Cmd, x, y, horizontal, x2, y2);
 	       }
 	       lastx = x;
