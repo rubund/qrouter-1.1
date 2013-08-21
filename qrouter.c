@@ -713,19 +713,19 @@ NET getnettoroute(int order)
 void
 dosecondstage()
 {
-   int i, result, maxtries;
+   int failcount, origcount, result, maxtries, lasttries;
    NET net;
    NETLIST nl, nl2, fn;
 
-   maxtries = (FailedNets) ? TotalRoutes + countlist(FailedNets) * 8 : 0;
+   origcount = countlist(FailedNets);
+   maxtries = (FailedNets) ? TotalRoutes + origcount * 8 : 0;
 
    while (FailedNets != NULL) {
 
       // Diagnostic:  how are we doing?
-      i = 0;
-      for (nl = FailedNets; nl; nl = nl->next) i++;
+      failcount = countlist(FailedNets);
       fprintf(stdout, "------------------------------\n");
-      fprintf(stdout, "Number of remaining nets: %d\n", i);
+      fprintf(stdout, "Number of remaining nets: %d\n", failcount);
       fprintf(stdout, "------------------------------\n");
 
       net = FailedNets->net;
@@ -818,12 +818,20 @@ dosecondstage()
 
       // Failsafe---if we have been looping enough times to exceed
       // maxtries (which is set to 8 route attempts per original failed
-      // net), then we give up.  Qrouter is almost certainly hopelessly
-      // stuck at this point.
+      // net), then we check progress.  If we have reduced the number
+      // of failed nets by half or more, then we have an indication of
+      // real progress, and will continue.  If not, we give up.  Qrouter
+      // is almost certainly hopelessly stuck at this point.
 
       if (TotalRoutes >= maxtries) {
-	 fprintf(stderr, "\nQrouter is stuck, abandoning remaining routes.\n");
-	 break;
+	 if (failcount <= (origcount / 2)) {
+	    maxtries = TotalRoutes + failcount * 8;
+	    origcount = failcount;
+	 }
+	 else {
+	    fprintf(stderr, "\nQrouter is stuck, abandoning remaining routes.\n");
+	    break;
+	 }
       }
    }
 }

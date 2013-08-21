@@ -354,9 +354,9 @@ NETLIST find_colliding(NET net)
 		        break;
 	          }
 	          if (cnl == NULL) {
-		     cnl = (NETLIST)malloc(sizeof(struct netlist_));
 		     for (fnet = Nlnets; fnet; fnet = fnet->next) {
 		        if (fnet->netnum == orignet) {
+			   cnl = (NETLIST)malloc(sizeof(struct netlist_));
 		           cnl->net = fnet;
 		           cnl->next = nl;
 		           nl = cnl;
