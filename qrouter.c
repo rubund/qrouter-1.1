@@ -231,8 +231,10 @@ main(int argc, char *argv[])
       
          /* Print information about route layers, and exit */
          for (i = 0; i < Num_layers; i++) {
-	    fprintf(infoFILEptr, "%s %g %g %g %s\n",
-			LefGetRouteName(i), LefGetRoutePitch(i),
+	    char *layername = LefGetRouteName(i);
+	    if (layername != NULL)
+	       fprintf(infoFILEptr, "%s %g %g %g %s\n",
+			layername, LefGetRoutePitch(i),
 			LefGetRouteOffset(i), LefGetRouteWidth(i),
 			(LefGetRouteOrientation(i) == 1) ? "horizontal"
 			: "vertical");
