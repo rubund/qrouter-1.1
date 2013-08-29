@@ -1178,7 +1178,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 		     printf("Failed to remove stacked via at grid point "
 				"%d %d.\n", lrcur->x1, lrcur->y1);
 		     stacks = 0;
-		     return FALSE;
+		     goto cleanup;
 		  }
 		  else {
 		     if (collide == TRUE) {
@@ -1186,7 +1186,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 				"%d %d;  position may not be routable.\n",
 				lrcur->x1, lrcur->y1);
 			stacks = 0;
-			return FALSE;
+			goto cleanup;
 		     }
 
 		     // On the second stage, we will run through the
@@ -1349,6 +1349,10 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
          if (dir2 && (stage == (u_char)0)) {
 	    Obs[lay2][OGRID(seg->x2, seg->y2, lay2)] |= dir2;
          }
+	 else if (dir1 && (seg->segtype & ST_VIA)) {
+	    // This also applies to vias at the end of a route
+	    Obs[seg->layer][OGRID(seg->x1, seg->y1, seg->layer)] |= dir1;
+	 }
 
 	 // Before returning, set *ept to the endpoint
 	 // position.  This is for diagnostic purposes only.
@@ -1368,8 +1372,13 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
       lseg = seg;	// Move to next segment position
    }
 
-   // This block is not reachable
-   printf("\nThis block is not reachable!\n");
+cleanup:
+
+   while (lrtop != NULL) {
+      lrnext = lrtop->next;
+      free(lrtop);
+      lrtop = lrnext;
+   }
    return FALSE;
 
 } /* commit_proute() */

@@ -314,7 +314,8 @@ void create_obstructions_from_gates()
     // and route width to avoid creating a DRC error with a route. 
 
     for (i = 0; i < Num_layers; i++) {
-	delta[i] = LefGetRouteKeepout(i);
+	// delta[i] = LefGetRouteKeepout(i);
+	delta[i] = LefGetViaWidth(i, i, 0) / 2.0 + LefGetRouteSpacing(i);
     }
 
     // Give a single net number to all obstructions, over the range of the
@@ -334,16 +335,16 @@ void create_obstructions_from_gates()
 			/ PitchX[ds->layer]) - 1;
 	  while (1) {
 	     dx = (gridx * PitchX[ds->layer]) + Xlowerbound;
-	     if (dx > (ds->x2 + delta[ds->layer])
+	     if ((dx + EPS) > (ds->x2 + delta[ds->layer])
 			|| gridx >= NumChannelsX[ds->layer]) break;
-	     else if (dx >= (ds->x1 - delta[ds->layer]) && gridx >= 0) {
+	     else if ((dx - EPS) > (ds->x1 - delta[ds->layer]) && gridx >= 0) {
 	        gridy = (int)((ds->y1 - Ylowerbound - delta[ds->layer])
 			/ PitchY[ds->layer]) - 1;
 	        while (1) {
 		   dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
-	           if (dy > (ds->y2 + delta[ds->layer])
+	           if ((dy + EPS) > (ds->y2 + delta[ds->layer])
 				|| gridy >= NumChannelsY[ds->layer]) break;
-		   if (dy >= (ds->y1 - delta[ds->layer]) && gridy >= 0)
+		   if ((dy - EPS) > (ds->y1 - delta[ds->layer]) && gridy >= 0)
 		      check_obstruct(gridx, gridy, ds, dx, dy);
 
 		   gridy++;
@@ -462,8 +463,12 @@ void create_obstructions_from_nodes()
     double dx, dy, delta[MAX_LAYERS], viaclear[MAX_LAYERS];
     float dist, xdist;
 
+    // Use a more conservative definition of keepout, to include via
+    // widths, which may be bigger than route widths.
+
     for (i = 0; i < Num_layers; i++) {
-	delta[i] = LefGetRouteKeepout(i);
+	// delta[i] = LefGetRouteKeepout(i);
+	delta[i] = LefGetViaWidth(i, i, 0) / 2.0 + LefGetRouteSpacing(i);
     }
 
     // For each node terminal (gate pin), mark each grid position with the
@@ -708,21 +713,21 @@ void create_obstructions_from_nodes()
 		while (1) {
 		   dx = (gridx * PitchX[ds->layer]) + Xlowerbound;
 
-		   if (dx > (ds->x2 + delta[ds->layer]) ||
+		   if ((dx + EPS) > (ds->x2 + delta[ds->layer]) ||
 				gridx >= NumChannelsX[ds->layer])
 		      break;
 
-		   else if (dx >= (ds->x1 - delta[ds->layer]) && gridx >= 0) {
+		   else if ((dx - EPS) > (ds->x1 - delta[ds->layer]) && gridx >= 0) {
 		      gridy = (int)((ds->y1 - Ylowerbound - delta[ds->layer])
 				/ PitchY[ds->layer]) - 1;
 
 		      while (1) {
 		         dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
-		         if (dy > (ds->y2 + delta[ds->layer]) ||
+		         if ((dy + EPS) > (ds->y2 + delta[ds->layer]) ||
 				gridy >= NumChannelsY[ds->layer])
 			    break;
 
-		         if (dy >= (ds->y1 - delta[ds->layer]) && gridy >= 0) {
+		         if ((dy - EPS) > (ds->y1 - delta[ds->layer]) && gridy >= 0) {
 			    xdist = 0.5 * LefGetRouteWidth(ds->layer);
 
 			    // Area inside halo around defined pin geometry.
@@ -908,7 +913,7 @@ void create_obstructions_from_nodes()
 
 				// Stub distances of <= 1/2 route width are useless
 				if (dir == STUBROUTE_NS || dir == STUBROUTE_EW)
-				   if (fabs(dist) < (xdist + 1e-4)) {
+				   if (fabs(dist) < (xdist + EPS)) {
 				      dir = 0;
 				      dist = 0.0;
 				   }
@@ -949,6 +954,33 @@ void create_obstructions_from_nodes()
 					= (NODE)NULL;
 				  Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
 					= (float)0.0;
+			       }
+			       else if (othernet == (u_int)node->netnum) {
+				  // Check if a potential DRC violation can
+				  // be removed by the addition of a stub route
+				  // TO DO: Check E-W directions!
+
+				  xdist = 0.5 * LefGetViaWidth(ds->layer, ds->layer, 0);
+				  if ((dy + xdist + LefGetRouteSpacing(ds->layer) >
+					ds->y1) && (dy + xdist < ds->y1)) {
+				     if (Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] == 0.0) {
+					Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = ds->y1 - dy;
+					Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_NS;
+				     }
+				  }
+				  if ((dy - xdist - LefGetRouteSpacing(ds->layer) <
+					ds->y2) && (dy - xdist > ds->y2)) {
+				     if (Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] == 0.0) {
+					Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = ds->y2 - dy;
+					Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_NS;
+				     }
+				  }
 			       }
 			    }
 		         }
@@ -1176,13 +1208,13 @@ void adjust_stub_lengths()
 			     }
 			     else if (orignet & PINOBSTRUCTMASK) {
 				if (orignet & STUBROUTE_EW) {
-				   if (dist > 1e-4)
+				   if (dist > EPS)
 				      dt.x2 = dx + dist;
 				   else
 				      dt.x1 = dx + dist;
 				}
 				else if (orignet & STUBROUTE_NS) {
-				   if (dist > 1e-4)
+				   if (dist > EPS)
 				      dt.y2 = dy + dist;
 				   else
 				      dt.y1 = dy + dist;
@@ -1194,14 +1226,14 @@ void adjust_stub_lengths()
 			     // check for DRC spacing interactions between
 			     // the tap box and the route box
 
-			     if ((dt.y1 - ds->y2) > 1e-4 && (dt.y1 - ds->y2) < s) {
+			     if ((dt.y1 - ds->y2) > EPS && (dt.y1 - ds->y2) < s) {
 				if (ds->x2 > (dt.x1 - s) && ds->x1 < (dt.x2 + s)) {
 				   de.y2 = dt.y1;
 				   de.y1 = ds->y2;
 				   errbox = TRUE;
 				}
 			     }
-			     else if ((ds->y1 - dt.y2) > 1e-4 && (ds->y1 - dt.y2) < s) {
+			     else if ((ds->y1 - dt.y2) > EPS && (ds->y1 - dt.y2) < s) {
 				if (ds->x2 > (dt.x1 - s) && ds->x1 < (dt.x2 + s)) {
 				   de.y1 = dt.y2;
 				   de.y2 = ds->y1;
@@ -1209,14 +1241,14 @@ void adjust_stub_lengths()
 				}
 			     }
 
-			     if ((dt.x1 - ds->x2) > 1e-4 && (dt.x1 - ds->x2) < s) {
+			     if ((dt.x1 - ds->x2) > EPS && (dt.x1 - ds->x2) < s) {
 				if (ds->y2 > (dt.y1 - s) && ds->y1 < (dt.y2 + s)) {
 				   de.x2 = dt.x1;
 				   de.x1 = ds->x2;
 				   errbox = TRUE;
 				}
 			     }
-			     else if ((ds->x1 - dt.x2) > 1e-4 && (ds->x1 - dt.x2) < s) {
+			     else if ((ds->x1 - dt.x2) > EPS && (ds->x1 - dt.x2) < s) {
 				if (ds->y2 > (dt.y1 - s) && ds->y1 < (dt.y2 + s)) {
 				   de.x1 = dt.x2;
 				   de.x2 = ds->x1;
@@ -1519,9 +1551,9 @@ find_route_blocks()
 		  while (dy < ds->y2 + s) {
 		     u = ((Obs[ds->layer][OGRID(gridx, gridy, ds->layer)] &
 				PINOBSTRUCTMASK) == STUBROUTE_EW) ? v : w;
-		     if (dy + 1e-4 < ds->y2 - u)
+		     if (dy + EPS < ds->y2 - u)
 			block_route(gridx, gridy, ds->layer, NORTH);
-		     if (dy - 1e-4 > ds->y1 + u)
+		     if (dy - EPS > ds->y1 + u)
 			block_route(gridx, gridy, ds->layer, SOUTH);
 		     dy += PitchY[ds->layer];
 		     gridy++;
@@ -1552,9 +1584,9 @@ find_route_blocks()
 		  while (dy < ds->y2 + s) {
 		     u = ((Obs[ds->layer][OGRID(gridx, gridy, ds->layer)] &
 				PINOBSTRUCTMASK) == STUBROUTE_EW) ? v : w;
-		     if (dy + 1e-4 < ds->y2 - u)
+		     if (dy + EPS < ds->y2 - u)
 			block_route(gridx, gridy, ds->layer, NORTH);
-		     if (dy - 1e-4 > ds->y1 + u)
+		     if (dy - EPS > ds->y1 + u)
 			block_route(gridx, gridy, ds->layer, SOUTH);
 		     dy += PitchY[ds->layer];
 		     gridy++;
@@ -1585,9 +1617,9 @@ find_route_blocks()
 		  while (dx < ds->x2 + s) {
 		     u = ((Obs[ds->layer][OGRID(gridx, gridy, ds->layer)] &
 				PINOBSTRUCTMASK) == STUBROUTE_NS) ? v : w;
-		     if (dx + 1e-4 < ds->x2 - u)
+		     if (dx + EPS < ds->x2 - u)
 			block_route(gridx, gridy, ds->layer, EAST);
-		     if (dx - 1e-4 > ds->x1 + u)
+		     if (dx - EPS > ds->x1 + u)
 			block_route(gridx, gridy, ds->layer, WEST);
 		     dx += PitchX[ds->layer];
 		     gridx++;
@@ -1618,9 +1650,9 @@ find_route_blocks()
 		  while (dx < ds->x2 + s) {
 		     u = ((Obs[ds->layer][OGRID(gridx, gridy, ds->layer)] &
 				PINOBSTRUCTMASK) == STUBROUTE_NS) ? v : w;
-		     if (dx + 1e-4 < ds->x2 - u)
+		     if (dx + EPS < ds->x2 - u)
 			block_route(gridx, gridy, ds->layer, EAST);
-		     if (dx - 1e-4 > ds->x1 + u)
+		     if (dx - EPS > ds->x1 + u)
 			block_route(gridx, gridy, ds->layer, WEST);
 		     dx += PitchX[ds->layer];
 		     gridx++;

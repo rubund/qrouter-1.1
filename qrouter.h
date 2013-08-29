@@ -11,6 +11,9 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 
+#define EPS	1e-4		// For handling round-off error;  value
+				// is in um (so 1e-4 = 0.1nm), should be
+				// smaller than any feature size.
 #define TRUE    1
 #define FALSE   0
 

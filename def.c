@@ -221,7 +221,7 @@ DefAddRoutes(FILE *f, float oscale, NET net, char special)
 	    else if (sscanf(token, "%lg", &x) == 1)
 	    {
 		x /= oscale;		// In microns
-		refp.x1 = (int)((x - Xlowerbound + 1e-4) / PitchX[paintLayer]);
+		refp.x1 = (int)((x - Xlowerbound + EPS) / PitchX[paintLayer]);
 	    }
 	    else
 	    {
@@ -242,7 +242,7 @@ DefAddRoutes(FILE *f, float oscale, NET net, char special)
 	    else if (sscanf(token, "%lg", &y) == 1)
 	    {
 		y /= oscale;		// In microns
-		refp.y1 = (int)((y - Ylowerbound + 1e-4) / PitchY[paintLayer]);
+		refp.y1 = (int)((y - Ylowerbound + EPS) / PitchY[paintLayer]);
 	    }
 	    else
 	    {

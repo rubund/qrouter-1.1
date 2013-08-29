@@ -301,7 +301,7 @@ int read_config(FILE *fconfig)
 	    drect->layer = LefFindLayerNum(sarg);
 	    if (drect->layer < 0) {
 		if ((i = sscanf(sarg, "%lf", &darg)) == 1) {
-		    i = (int)(darg + 1e-4);
+		    i = (int)(darg + EPS);
 		    if (i >= 0 && i < Num_layers) {
 		        drect->layer = i;
 		    }

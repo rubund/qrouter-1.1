@@ -690,6 +690,13 @@ LefGetViaWidth(int base, int layer, int dir)
     lefl = LefFindLayer(Via[base]);
     if (lefl) {
 	if (lefl->lefClass == CLASS_VIA) {
+	    if (lefl->info.via.area.layer == layer) {
+	       if (dir)
+		  width = lefl->info.via.area.y2 - lefl->info.via.area.y1;
+	       else
+		  width = lefl->info.via.area.x2 - lefl->info.via.area.x1;
+	       return width / 2.0;
+	    }
 	    for (lrect = lefl->info.via.lr; lrect; lrect = lrect->next) {
 	       if (lrect->layer == layer) {
 		  if (dir)

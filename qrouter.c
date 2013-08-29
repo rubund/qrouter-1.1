@@ -1693,7 +1693,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 
 	    dir1 = Obs[layer][OGRID(seg->x1, seg->y1, layer)];
 	    dir1 &= PINOBSTRUCTMASK;
-	    if (dir1 && !(seg->segtype & ST_OFFSET_START)) {
+	    if (dir1 && !(seg->segtype & (ST_OFFSET_START | ST_OFFSET_END))) {
 	       stubroute = 1;
 	       if (special == (u_char)0)
 		  fprintf(stdout, "Stub route distance %g to terminal"
@@ -1702,15 +1702,15 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 				seg->x1, seg->y1, layer);
 
 	       dc = Xlowerbound + (double)seg->x1 * PitchX[layer];
-	       x = (int)((dc + 1e-4) * oscale);
+	       x = (int)((dc + EPS) * oscale);
 	       if (dir1 == STUBROUTE_EW)
 		  dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
-	       x2 = (int)((dc + 1e-4) * oscale);
+	       x2 = (int)((dc + EPS) * oscale);
 	       dc = Ylowerbound + (double)seg->y1 * PitchY[layer];
-	       y = (int)((dc + 1e-4) * oscale);
+	       y = (int)((dc + EPS) * oscale);
 	       if (dir1 == STUBROUTE_NS)
 		  dc += Stub[layer][OGRID(seg->x1, seg->y1, layer)];
-	       y2 = (int)((dc + 1e-4) * oscale);
+	       y2 = (int)((dc + EPS) * oscale);
 	       if (dir1 == STUBROUTE_EW) {
 		  horizontal = TRUE;
 
@@ -1734,7 +1734,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 					LefGetRouteKeepout(layer) >= PitchX[layer]) {
 		      	   dc = Xlowerbound + (double)(seg->x1 + 1)
 					* PitchX[layer];
-		      	   x2 = (int)((dc + 1e-4) * oscale);
+		      	   x2 = (int)((dc + EPS) * oscale);
 			}
 		     }
 		  }
@@ -1746,7 +1746,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 					LefGetRouteKeepout(layer) >= PitchX[layer]) {
 		      	   dc = Xlowerbound + (double)(seg->x1 - 1)
 					* PitchX[layer];
-		      	   x2 = (int)((dc + 1e-4) * oscale);
+		      	   x2 = (int)((dc + EPS) * oscale);
 			}
 		     }
 		  }
@@ -1794,7 +1794,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 					LefGetRouteKeepout(layer) >= PitchY[layer]) {
 		      	   dc = Ylowerbound + (double)(seg->y1 + 1)
 					* PitchY[layer];
-		      	   y2 = (int)((dc + 1e-4) * oscale);
+		      	   y2 = (int)((dc + EPS) * oscale);
 			}
 		     }
 		  }
@@ -1806,7 +1806,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 					LefGetRouteKeepout(layer) >= PitchY[layer]) {
 		      	   dc = Ylowerbound + (double)(seg->y1 - 1)
 					* PitchY[layer];
-		      	   y2 = (int)((dc + 1e-4) * oscale);
+		      	   y2 = (int)((dc + EPS) * oscale);
 			}
 		     }
 		  }
@@ -1926,16 +1926,16 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 
 	    dc = Xlowerbound + (double)seg->x1 * PitchX[layer];
 	    if (dir1 == (STUBROUTE_EW | OFFSET_TAP)) dc += offset1;
-	    x = (int)((dc + 1e-4) * oscale);
+	    x = (int)((dc + EPS) * oscale);
 	    dc = Ylowerbound + (double)seg->y1 * PitchY[layer];
 	    if (dir1 == (STUBROUTE_NS | OFFSET_TAP)) dc += offset1;
-	    y = (int)((dc + 1e-4) * oscale);
+	    y = (int)((dc + EPS) * oscale);
 	    dc = Xlowerbound + (double)seg->x2 * PitchX[layer];
 	    if (dir2 == (STUBROUTE_EW | OFFSET_TAP)) dc += offset2;
-	    x2 = (int)((dc + 1e-4) * oscale);
+	    x2 = (int)((dc + EPS) * oscale);
 	    dc = Ylowerbound + (double)seg->y2 * PitchY[layer];
 	    if (dir2 == (STUBROUTE_NS | OFFSET_TAP)) dc += offset2;
-	    y2 = (int)((dc + 1e-4) * oscale);
+	    y2 = (int)((dc + EPS) * oscale);
 	    switch (seg->segtype & ~(ST_OFFSET_START | ST_OFFSET_END)) {
 	       case ST_WIRE:
 		  if (Pathon != 1) {	// 1st point of route seg
@@ -2008,7 +2008,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 	     layer = seg->layer;
 	     dir2 = Obs[layer][OGRID(seg->x2, seg->y2, layer)];
 	     dir2 &= PINOBSTRUCTMASK;
-	     if (dir2 && !(seg->segtype & ST_OFFSET_END)) {
+	     if (dir2 && !(seg->segtype & (ST_OFFSET_END | ST_OFFSET_START))) {
 		stubroute = 1;
 		if (special == (u_char)0)
 		   fprintf(stdout, "Stub route distance %g to terminal"
@@ -2017,15 +2017,15 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 				seg->x2, seg->y2, layer);
 
 		dc = Xlowerbound + (double)seg->x2 * PitchX[layer];
-		x = (int)((dc + 1e-4) * oscale);
+		x = (int)((dc + EPS) * oscale);
 		if (dir2 == STUBROUTE_EW)
 		   dc += Stub[layer][OGRID(seg->x2, seg->y2, layer)];
-		x2 = (int)((dc + 1e-4) * oscale);
+		x2 = (int)((dc + EPS) * oscale);
 		dc = Ylowerbound + (double)seg->y2 * PitchY[layer];
-		y = (int)((dc + 1e-4) * oscale);
+		y = (int)((dc + EPS) * oscale);
 		if (dir2 == STUBROUTE_NS)
 		   dc += Stub[layer][OGRID(seg->x2, seg->y2, layer)];
-		y2 = (int)((dc + 1e-4) * oscale);
+		y2 = (int)((dc + EPS) * oscale);
 		if (dir2 == STUBROUTE_EW) {
 		   horizontal = TRUE;
 
@@ -2043,7 +2043,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 					LefGetRouteKeepout(layer) >= PitchX[layer]) {
 		      	    dc = Xlowerbound + (double)(seg->x2 + 1)
 					* PitchX[layer];
-		      	    x2 = (int)((dc + 1e-4) * oscale);
+		      	    x2 = (int)((dc + EPS) * oscale);
 			 }
 		      }
 		   }
@@ -2055,7 +2055,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 					LefGetRouteKeepout(layer) >= PitchX[layer]) {
 		      	    dc = Xlowerbound + (double)(seg->x2 - 1)
 					* PitchX[layer];
-		      	    x2 = (int)((dc + 1e-4) * oscale);
+		      	    x2 = (int)((dc + EPS) * oscale);
 			 }
 		      }
 		   }
@@ -2103,7 +2103,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 					LefGetRouteKeepout(layer) >= PitchY[layer]) {
 		      	    dc = Ylowerbound + (double)(seg->y2 + 1)
 					* PitchY[layer];
-		      	    y2 = (int)((dc + 1e-4) * oscale);
+		      	    y2 = (int)((dc + EPS) * oscale);
 			 }
 		      }
 		   }
@@ -2115,7 +2115,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 					LefGetRouteKeepout(layer) >= PitchY[layer]) {
 		      	    dc = Ylowerbound + (double)(seg->y2 - 1)
 					* PitchY[layer];
-		      	    y2 = (int)((dc + 1e-4) * oscale);
+		      	    y2 = (int)((dc + EPS) * oscale);
 			 }
 		      }
 		   }
