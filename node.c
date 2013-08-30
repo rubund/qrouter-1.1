@@ -628,7 +628,10 @@ void create_obstructions_from_nodes()
 			     }
 			     else if ((orignet & NO_NET) && ((orignet & OBSTRUCT_MASK)
 					!= OBSTRUCT_MASK)) {
-				double sdist = LefGetRouteKeepout(ds->layer);
+				double sdistx = LefGetViaWidth(ds->layer, ds->layer, 0)
+					/ 2.0 + LefGetRouteSpacing(ds->layer);
+				double sdisty = LefGetViaWidth(ds->layer, ds->layer, 1)
+					/ 2.0 + LefGetRouteSpacing(ds->layer);
 				double offd;
 
 				// Define a maximum offset we can have in X or
@@ -656,7 +659,7 @@ void create_obstructions_from_nodes()
 					= (u_int)node->netnum;
 
 				if (orignet & OBSTRUCT_N) {
-			           offd = -(sdist - Obsinfo[ds->layer]
+			           offd = -(sdisty - Obsinfo[ds->layer]
 					[OGRID(gridx, gridy, ds->layer)]);
 				   if (offd >= -offmaxy[ds->layer]) {
 			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -667,7 +670,7 @@ void create_obstructions_from_nodes()
 				   else maxerr = 1;
 				}
 				else if (orignet & OBSTRUCT_S) {
-				   offd = sdist - Obsinfo[ds->layer]
+				   offd = sdisty - Obsinfo[ds->layer]
 					[OGRID(gridx, gridy, ds->layer)];
 				   if (offd <= offmaxy[ds->layer]) {
 			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -678,7 +681,7 @@ void create_obstructions_from_nodes()
 				   else maxerr = 1;
 				}
 				else if (orignet & OBSTRUCT_E) {
-				   offd = -(sdist - Obsinfo[ds->layer]
+				   offd = -(sdistx - Obsinfo[ds->layer]
 					[OGRID(gridx, gridy, ds->layer)]);
 				   if (offd >= -offmaxx[ds->layer]) {
 			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -689,7 +692,7 @@ void create_obstructions_from_nodes()
 				   else maxerr = 1;
 				}
 				else if (orignet & OBSTRUCT_W) {
-				   offd = sdist - Obsinfo[ds->layer]
+				   offd = sdistx - Obsinfo[ds->layer]
 					[OGRID(gridx, gridy, ds->layer)];
 				   if (offd <= offmaxx[ds->layer]) {
 			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
@@ -700,14 +703,8 @@ void create_obstructions_from_nodes()
 				   else maxerr = 1;
 				}
 
-			        if (maxerr == 1) {
-			           Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= (NODE)NULL;
-			           Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= (NODE)NULL;
-			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= NO_NET;
-				}
+			        if (maxerr == 1)
+				   disable_gridpos(gridx, gridy, ds->layer);
 
 				// Diagnostic
 				else if (Verbose > 0)
@@ -989,6 +986,7 @@ void create_obstructions_from_nodes()
 			    }
 			    else {
 			       int othernet = (k & ~PINOBSTRUCTMASK);
+
 			       if (othernet != 0 && othernet != (u_int)node->netnum) {
 
 			          // This location is too close to two different
@@ -997,20 +995,17 @@ void create_obstructions_from_nodes()
 				  // if othernet could be routed using a tap
 				  // offset.  By axing it we might lose the
 				  // only route point to one of the pins.)
-
-				  Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= NO_NET;
-				  Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= (NODE)NULL;
-				  Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= (NODE)NULL;
-				  Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= (float)0.0;
+				  // (Another note:  This routine also disables
+				  // catecorner positions that might pass
+				  // euclidean distance DRC checks, so it's
+				  // more restrictive than necessary.)
+				
+				  disable_gridpos(gridx, gridy, ds->layer);
 			       }
 			       else if (othernet == (u_int)node->netnum) {
+
 				  // Check if a potential DRC violation can
 				  // be removed by the addition of a stub route
-				  // TO DO: Check E-W directions!
 
 				  xdist = 0.5 * LefGetViaWidth(ds->layer, ds->layer, 0);
 				  if ((dy + xdist + LefGetRouteSpacing(ds->layer) >
@@ -1031,6 +1026,109 @@ void create_obstructions_from_nodes()
 						ds->layer)] = ds->y2 - dy;
 					Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
 						|= STUBROUTE_NS;
+				     }
+				  }
+
+				  xdist = 0.5 * LefGetViaWidth(ds->layer, ds->layer, 1);
+				  if ((dx + xdist + LefGetRouteSpacing(ds->layer) >
+					ds->x1) && (dx + xdist < ds->x1)) {
+				     if (Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] == 0.0) {
+					Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = ds->x1 - dx;
+					Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_EW;
+				     }
+				  }
+				  if ((dx - xdist - LefGetRouteSpacing(ds->layer) <
+					ds->x2) && (dx - xdist > ds->x2)) {
+				     if (Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] == 0.0) {
+					Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = ds->x2 - dx;
+					Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= STUBROUTE_EW;
+				     }
+				  }
+			       }
+
+			       /* If we are on a layer > 0, then this geometry	*/
+			       /* may block or partially block a pin on layer	*/
+			       /* zero.  Mark this point as belonging to the	*/
+			       /* net with a stub route to it.			*/
+			       /* NOTE:  This is possibly too restrictive.	*/
+			       /* May want to force a tap offset for vias on	*/
+			       /* layer zero. . .				*/
+
+			       if ((ds->layer > 0) && (n2 != NULL) && (n2->netnum
+					!= node->netnum) && ((othernet == 0) ||
+					(othernet == (u_int)node->netnum))) {
+
+				  xdist = 0.5 * LefGetViaWidth(ds->layer, ds->layer, 0);
+				  if ((dy + xdist + LefGetRouteSpacing(ds->layer) >
+					ds->y1) && (dy + xdist < ds->y1)) {
+				     if ((dx - xdist < ds->x2) &&
+						(dx + xdist > ds->x1) &&
+						(Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] == 0.0)) {
+					Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = ds->y1 - dy;
+					Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= node->netnum | STUBROUTE_NS;
+					Nodeloc[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = node;
+					Nodesav[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = node;
+				     }
+				  }
+				  if ((dy - xdist - LefGetRouteSpacing(ds->layer) <
+					ds->y2) && (dy - xdist > ds->y2)) {
+				     if ((dx - xdist < ds->x2) &&
+						(dx + xdist > ds->x1) &&
+						(Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] == 0.0)) {
+					Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = ds->y2 - dy;
+					Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= node->netnum | STUBROUTE_NS;
+					Nodeloc[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = node;
+					Nodesav[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = node;
+				     }
+				  }
+
+				  xdist = 0.5 * LefGetViaWidth(ds->layer, ds->layer, 1);
+				  if ((dx + xdist + LefGetRouteSpacing(ds->layer) >
+					ds->x1) && (dx + xdist < ds->x1)) {
+				     if ((dy - xdist < ds->y2) &&
+						(dy + xdist > ds->y1) &&
+						(Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] == 0.0)) {
+					Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = ds->x1 - dx;
+					Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= node->netnum | STUBROUTE_EW;
+					Nodeloc[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = node;
+					Nodesav[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = node;
+				     }
+				  }
+				  if ((dx - xdist - LefGetRouteSpacing(ds->layer) <
+					ds->x2) && (dx - xdist > ds->x2)) {
+				     if ((dy - xdist < ds->y2) &&
+						(dy + xdist > ds->y1) &&
+						(Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] == 0.0)) {
+					Stub[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = ds->x2 - dx;
+					Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= node->netnum | STUBROUTE_EW;
+					Nodeloc[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = node;
+					Nodesav[ds->layer][OGRID(gridx, gridy,
+						ds->layer)] = node;
 				     }
 				  }
 			       }
@@ -1202,7 +1300,8 @@ void adjust_stub_lengths()
 	     // Work through each rectangle in the tap geometry
 
              for (ds = g->taps[i]; ds; ds = ds->next) {
-		w = 0.5 * LefGetRouteWidth(ds->layer);
+		// w = 0.5 * LefGetRouteWidth(ds->layer);
+		w = 0.5 * LefGetViaWidth(ds->layer, ds->layer, 0);
 		s = LefGetRouteSpacing(ds->layer);
 		gridx = (int)((ds->x1 - Xlowerbound - PitchX[ds->layer])
 			/ PitchX[ds->layer]) - 1;
@@ -1315,25 +1414,38 @@ void adjust_stub_lengths()
 
 			        for (ds2 = g->taps[i]; ds2; ds2 = ds2->next) {
 				   if (ds2 == ds) continue;
+				   if (ds2->layer != ds->layer) continue;
 
 				   if (ds2->x1 <= de.x1 && ds2->x2 >= de.x2 &&
 					ds2->y1 <= de.y1 && ds2->y2 >= de.y2) {
 				      errbox = FALSE;	// Completely covered
 				      break;
 				   }
-				   if (ds2->x1 < de.x2 && ds2->x2 > de.x1) {
-				      if (ds2->y1 < de.y2 && ds2->y2 > de.y1) {
-					 // Partial coverage
+
+				   // Look for partial coverage.  Note that any
+				   // change can cause a change in the original
+				   // two conditionals, so we have to keep
+				   // evaluating those conditionals.
+
+				   if (ds2->x1 < de.x2 && ds2->x2 > de.x1)
+				      if (ds2->y1 < de.y2 && ds2->y2 > de.y1)
 					 if (ds2->x1 < de.x1 && ds2->x2 < de.x2)
 					    de.x1 = ds2->x2;
+
+				   if (ds2->x1 < de.x2 && ds2->x2 > de.x1)
+				      if (ds2->y1 < de.y2 && ds2->y2 > de.y1)
 					 if (ds2->x2 > de.x2 && ds2->x1 > de.x1)
 					    de.x2 = ds2->x1;
+
+				   if (ds2->x1 < de.x2 && ds2->x2 > de.x1)
+				      if (ds2->y1 < de.y2 && ds2->y2 > de.y1)
 					 if (ds2->y1 < de.y1 && ds2->y2 < de.y2)
 					    de.y1 = ds2->y2;
+
+				   if (ds2->x1 < de.x2 && ds2->x2 > de.x1)
+				      if (ds2->y1 < de.y2 && ds2->y2 > de.y1)
 					 if (ds2->y2 > de.y2 && ds2->y1 > de.y1)
 					    de.y2 = ds2->y1;
-				      }
-				   }
 				}
 			     }
 

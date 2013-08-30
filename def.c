@@ -512,8 +512,11 @@ DefReadNets(FILE *f, char *sname, float oscale, char special, int total)
 	Numnets = MIN_NET_NUMBER;
 
 	// Compute distance for keepout halo for each route layer
+	// NOTE:  This must match the definition for the keepout halo
+	// used in nodes.c!
 	for (i = 0; i < Num_layers; i++) {
-	    home[i] = LefGetRouteKeepout(i);
+	    home[i] = LefGetViaWidth(i, i, 0) / 2.0 + LefGetRouteSpacing(i);
+	    // home[i] = LefGetRouteKeepout(i);
 	}
     }
 
