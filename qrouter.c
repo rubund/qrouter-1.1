@@ -720,7 +720,10 @@ dosecondstage()
    NETLIST nl, nl2, fn;
 
    origcount = countlist(FailedNets);
-   maxtries = (FailedNets) ? TotalRoutes + origcount * 8 : 0;
+   if (FailedNets)
+      maxtries = TotalRoutes + ((origcount < 20) ? 20 : origcount) * 8;
+   else
+      maxtries = 0;
 
    while (FailedNets != NULL) {
 

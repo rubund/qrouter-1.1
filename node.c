@@ -462,6 +462,7 @@ void create_obstructions_from_nodes()
     int i, gx, gy, gridx, gridy, net;
     double dx, dy, delta[MAX_LAYERS], viaclear[MAX_LAYERS];
     float dist, xdist;
+    double offmaxx[MAX_LAYERS], offmaxy[MAX_LAYERS];
 
     // Use a more conservative definition of keepout, to include via
     // widths, which may be bigger than route widths.
@@ -469,6 +470,20 @@ void create_obstructions_from_nodes()
     for (i = 0; i < Num_layers; i++) {
 	// delta[i] = LefGetRouteKeepout(i);
 	delta[i] = LefGetViaWidth(i, i, 0) / 2.0 + LefGetRouteSpacing(i);
+
+	offmaxx[i] = PitchX[i] - LefGetRouteSpacing(i)
+		- 0.5 * (LefGetRouteWidth(i) + LefGetViaWidth(i, i, 0));
+	offmaxy[i] = PitchY[i] - LefGetRouteSpacing(i)
+		- 0.5 * (LefGetRouteWidth(i) + LefGetViaWidth(i, i, 1));
+    }
+
+    // When we place vias at an offset, they have to satisfy the spacing
+    // requirements for the via's top layer, as well.  So take the least
+    // maximum offset of each layer and the layer above it.
+
+    for (i = 0; i < Num_layers - 1; i++) {
+       offmaxx[i] = MIN(offmaxx[i], offmaxx[i + 1]);
+       offmaxy[i] = MIN(offmaxy[i], offmaxy[i + 1]);
     }
 
     // For each node terminal (gate pin), mark each grid position with the
@@ -614,6 +629,15 @@ void create_obstructions_from_nodes()
 			     else if ((orignet & NO_NET) && ((orignet & OBSTRUCT_MASK)
 					!= OBSTRUCT_MASK)) {
 				double sdist = LefGetRouteKeepout(ds->layer);
+				double offd;
+
+				// Define a maximum offset we can have in X or
+				// Y above which the placement of a via will
+				// cause a DRC violation with a wire in the
+				// adjacent route track in the direction of the
+				// offset.
+
+				int maxerr = 0;
 
 				// If a cell is positioned off-grid, then a grid
 				// point may be inside a pin and still be unroutable.
@@ -632,36 +656,61 @@ void create_obstructions_from_nodes()
 					= (u_int)node->netnum;
 
 				if (orignet & OBSTRUCT_N) {
-			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= -(sdist - Obsinfo[ds->layer]
+			           offd = -(sdist - Obsinfo[ds->layer]
 					[OGRID(gridx, gridy, ds->layer)]);
-			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					|= (STUBROUTE_NS | OFFSET_TAP);
+				   if (offd >= -offmaxy[ds->layer]) {
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= offd;
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= (STUBROUTE_NS | OFFSET_TAP);
+				   }
+				   else maxerr = 1;
 				}
 				else if (orignet & OBSTRUCT_S) {
-			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= sdist - Obsinfo[ds->layer]
+				   offd = sdist - Obsinfo[ds->layer]
 					[OGRID(gridx, gridy, ds->layer)];
-			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					|= (STUBROUTE_NS | OFFSET_TAP);
+				   if (offd <= offmaxy[ds->layer]) {
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= offd;
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= (STUBROUTE_NS | OFFSET_TAP);
+				   }
+				   else maxerr = 1;
 				}
 				else if (orignet & OBSTRUCT_E) {
-			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= -(sdist - Obsinfo[ds->layer]
+				   offd = -(sdist - Obsinfo[ds->layer]
 					[OGRID(gridx, gridy, ds->layer)]);
-			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					|= (STUBROUTE_EW | OFFSET_TAP);
+				   if (offd >= -offmaxx[ds->layer]) {
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= offd;
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= (STUBROUTE_EW | OFFSET_TAP);
+				   }
+				   else maxerr = 1;
 				}
 				else if (orignet & OBSTRUCT_W) {
-			           Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					= sdist - Obsinfo[ds->layer]
+				   offd = sdist - Obsinfo[ds->layer]
 					[OGRID(gridx, gridy, ds->layer)];
+				   if (offd <= offmaxx[ds->layer]) {
+			              Stub[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						= offd;
+			              Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
+						|= (STUBROUTE_EW | OFFSET_TAP);
+				   }
+				   else maxerr = 1;
+				}
+
+			        if (maxerr == 1) {
+			           Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= (NODE)NULL;
+			           Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)]
+					= (NODE)NULL;
 			           Obs[ds->layer][OGRID(gridx, gridy, ds->layer)]
-					|= (STUBROUTE_EW | OFFSET_TAP);
+					= NO_NET;
 				}
 
 				// Diagnostic
-				if (Verbose > 0)
+				else if (Verbose > 0)
 				   fprintf(stderr, "Port overlaps obstruction"
 					" at grid %d %d, position %g %g\n",
 					gridx, gridy, dx, dy);
@@ -744,6 +793,9 @@ void create_obstructions_from_nodes()
 					ds->layer - 1)];
 			    if (n2 == NULL)
 			       n2 = Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)];
+
+			    // Ignore my own node.
+			    if (n2 == node) n2 = NULL;
 
 			    k = Obs[ds->layer][OGRID(gridx, gridy, ds->layer)];
 
