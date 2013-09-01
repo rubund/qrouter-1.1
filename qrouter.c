@@ -1100,8 +1100,6 @@ int doroute(NET net, u_char stage)
 
   while (1) {	// Keep going until we are unable to route to a terminal
 
-     TotalRoutes++;
-
      rt1 = createemptyroute();
      rt1->netnum = net->netnum;
 
@@ -1124,20 +1122,23 @@ int doroute(NET net, u_char stage)
 	return 0;
      }
 
+     if (result < 0) {		// Route failure.
+	nlist = (NETLIST)malloc(sizeof(struct netlist_));
+	nlist->net = net;
+	nlist->next = FailedNets;
+	FailedNets = nlist;
+	free(rt1);
+	return -1;
+     }
+
+     TotalRoutes++;
+
      if (net->routes) {
         for (lrt = net->routes; lrt->next; lrt = lrt->next);
 	lrt->next = rt1;
      }
      else {
 	net->routes = rt1;
-     }
-
-     if (result < 0) {		// Route failure.
-	nlist = (NETLIST)malloc(sizeof(struct netlist_));
-	nlist->net = net;
-	nlist->next = FailedNets;
-	FailedNets = nlist;
-	return -1;
      }
   }
   
@@ -1563,11 +1564,10 @@ int route_segs(NET net, ROUTE rt, u_char stage)
 	curpt.x = best.x;
 	curpt.y = best.y;
 	curpt.lay = best.lay;
-	if (commit_proute(rt, &curpt, stage) == FALSE) break;
+	if ((rval = commit_proute(rt, &curpt, stage)) != 1) break;
 	fprintf(stdout, "\nCommit to a route of cost %d\n", best.cost);
 	fprintf(stdout, "Between positions (%d %d) and (%d %d)\n",
 		best.x, best.y, curpt.x, curpt.y);
-	rval = 1;
 	goto done;	/* route success */
     }
 
@@ -1601,7 +1601,6 @@ int route_segs(NET net, ROUTE rt, u_char stage)
   fprintf(CNfptr, "Route Priority\t%s\n", n1->netname);
   fflush(CNfptr);
   fflush(Failfptr);
-  
   rval = -1;
 
 done:

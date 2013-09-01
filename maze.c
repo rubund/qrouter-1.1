@@ -737,15 +737,17 @@ void writeback_segment(SEG seg, int netnum)
 /*	    second stage routing, in which case we fill the	*/
 /*	    route structure but don't modify the Obs array.	*/
 /*								*/
-/*  RETURNS: TRUE on success, FALSE on stacked via failure	*/
-/*	    or failure to find a terminal.			*/
+/*  RETURNS: 1 on success, 0 on stacked via failure, and 	*/
+/*	    -1 on failure to find a terminal.  On a stacked	*/
+/* 	    via failure, the route is committed anyway.		*/
+/*								*/
 /*  SIDE EFFECTS: Obs update, RT llseg added			*/
 /*--------------------------------------------------------------*/
 
 int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 {
    SEG  seg, lseg;
-   int  i, j, k, lay, lay2;
+   int  i, j, k, lay, lay2, rval;
    int  x, y;
    int  dx, dy, dl;
    u_int netnum, netobs1, netobs2, dir1, dir2;
@@ -764,7 +766,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
    Pr = &Obs2[ept->lay][OGRID(ept->x, ept->y, ept->lay)];
    if (!(Pr->flags & PR_COST)) {
       fprintf(stderr, "commit_proute(): impossible - terminal is not routable!\n");
-      return FALSE;
+      return -1;
    }
 
    // Generate an indexed route, recording the series of predecessors and their
@@ -817,6 +819,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
    // TEST:  Walk through the solution, and look for stacked vias.  When
    // found, look for an alternative path that avoids the stack.
 
+   rval = 1;
    if (StackedContacts < (Num_layers - 1)) {
       POINT lrppre;
       POINT a, b;
@@ -1178,6 +1181,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 		     printf("Failed to remove stacked via at grid point "
 				"%d %d.\n", lrcur->x1, lrcur->y1);
 		     stacks = 0;
+		     rval = 0;
 		     goto cleanup;
 		  }
 		  else {
@@ -1186,6 +1190,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 				"%d %d;  position may not be routable.\n",
 				lrcur->x1, lrcur->y1);
 			stacks = 0;
+			rval = 0;
 			goto cleanup;
 		     }
 
@@ -1366,9 +1371,8 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 	    free(lrtop);
 	    lrtop = lrnext;
 	 }
-	 return TRUE;
+	 return rval;	// Success
       }
-
       lseg = seg;	// Move to next segment position
    }
 
@@ -1379,7 +1383,7 @@ cleanup:
       free(lrtop);
       lrtop = lrnext;
    }
-   return FALSE;
+   return 0;
 
 } /* commit_proute() */
 
