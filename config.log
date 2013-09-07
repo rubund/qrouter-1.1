@@ -39,22 +39,22 @@ PATH: /usr/local/bin
 ## Core tests. ##
 ## ----------- ##
 
-configure:1977: checking build system type
-configure:1991: result: x86_64-unknown-linux-gnu
-configure:2011: checking host system type
-configure:2024: result: x86_64-unknown-linux-gnu
-configure:2110: checking for gcc
-configure:2126: found /usr/bin/gcc
-configure:2137: result: gcc
-configure:2366: checking for C compiler version
-configure:2375: gcc --version >&5
+configure:1978: checking build system type
+configure:1992: result: x86_64-unknown-linux-gnu
+configure:2012: checking host system type
+configure:2025: result: x86_64-unknown-linux-gnu
+configure:2113: checking for gcc
+configure:2129: found /usr/bin/gcc
+configure:2140: result: gcc
+configure:2369: checking for C compiler version
+configure:2378: gcc --version >&5
 gcc (GCC) 4.6.3 20120306 (Red Hat 4.6.3-2)
 Copyright (C) 2011 Free Software Foundation, Inc.
 This is free software; see the source for copying conditions.  There is NO
 warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-configure:2386: $? = 0
-configure:2375: gcc -v >&5
+configure:2389: $? = 0
+configure:2378: gcc -v >&5
 Using built-in specs.
 COLLECT_GCC=gcc
 COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-redhat-linux/4.6.3/lto-wrapper
@@ -62,56 +62,56 @@ Target: x86_64-redhat-linux
 Configured with: ../configure --prefix=/usr --mandir=/usr/share/man --infodir=/usr/share/info --with-bugurl=http://bugzilla.redhat.com/bugzilla --enable-bootstrap --enable-shared --enable-threads=posix --enable-checking=release --with-system-zlib --enable-__cxa_atexit --disable-libunwind-exceptions --enable-gnu-unique-object --enable-linker-build-id --enable-languages=c,c++,objc,obj-c++,java,fortran,ada,go,lto --enable-plugin --enable-java-awt=gtk --disable-dssi --with-java-home=/usr/lib/jvm/java-1.5.0-gcj-1.5.0.0/jre --enable-libgcj-multifile --enable-java-maintainer-mode --with-ecj-jar=/usr/share/java/eclipse-ecj.jar --disable-libjava-multilib --with-ppl --with-cloog --with-tune=generic --with-arch_32=i686 --build=x86_64-redhat-linux
 Thread model: posix
 gcc version 4.6.3 20120306 (Red Hat 4.6.3-2) (GCC) 
-configure:2386: $? = 0
-configure:2375: gcc -V >&5
+configure:2389: $? = 0
+configure:2378: gcc -V >&5
 gcc: error: unrecognized option '-V'
 gcc: fatal error: no input files
 compilation terminated.
-configure:2386: $? = 4
-configure:2375: gcc -qversion >&5
+configure:2389: $? = 4
+configure:2378: gcc -qversion >&5
 gcc: error: unrecognized option '-qversion'
 gcc: fatal error: no input files
 compilation terminated.
-configure:2386: $? = 4
-configure:2406: checking whether the C compiler works
-configure:2428: gcc    conftest.c  >&5
-configure:2432: $? = 0
-configure:2480: result: yes
-configure:2483: checking for C compiler default output file name
-configure:2485: result: a.out
-configure:2491: checking for suffix of executables
-configure:2498: gcc -o conftest    conftest.c  >&5
-configure:2502: $? = 0
-configure:2524: result: 
-configure:2546: checking whether we are cross compiling
-configure:2554: gcc -o conftest    conftest.c  >&5
-configure:2558: $? = 0
-configure:2565: ./conftest
-configure:2569: $? = 0
-configure:2584: result: no
-configure:2589: checking for suffix of object files
-configure:2611: gcc -c   conftest.c >&5
-configure:2615: $? = 0
-configure:2636: result: o
-configure:2640: checking whether we are using the GNU C compiler
-configure:2659: gcc -c   conftest.c >&5
-configure:2659: $? = 0
-configure:2668: result: yes
-configure:2677: checking whether gcc accepts -g
-configure:2697: gcc -c -g  conftest.c >&5
-configure:2697: $? = 0
-configure:2738: result: yes
-configure:2755: checking for gcc option to accept ISO C89
-configure:2819: gcc  -c -g -O2  conftest.c >&5
-configure:2819: $? = 0
-configure:2832: result: none needed
-configure:2857: checking how to run the C preprocessor
-configure:2888: gcc -E  conftest.c
-configure:2888: $? = 0
-configure:2902: gcc -E  conftest.c
+configure:2389: $? = 4
+configure:2409: checking whether the C compiler works
+configure:2431: gcc    conftest.c  >&5
+configure:2435: $? = 0
+configure:2483: result: yes
+configure:2486: checking for C compiler default output file name
+configure:2488: result: a.out
+configure:2494: checking for suffix of executables
+configure:2501: gcc -o conftest    conftest.c  >&5
+configure:2505: $? = 0
+configure:2527: result: 
+configure:2549: checking whether we are cross compiling
+configure:2557: gcc -o conftest    conftest.c  >&5
+configure:2561: $? = 0
+configure:2568: ./conftest
+configure:2572: $? = 0
+configure:2587: result: no
+configure:2592: checking for suffix of object files
+configure:2614: gcc -c   conftest.c >&5
+configure:2618: $? = 0
+configure:2639: result: o
+configure:2643: checking whether we are using the GNU C compiler
+configure:2662: gcc -c   conftest.c >&5
+configure:2662: $? = 0
+configure:2671: result: yes
+configure:2680: checking whether gcc accepts -g
+configure:2700: gcc -c -g  conftest.c >&5
+configure:2700: $? = 0
+configure:2741: result: yes
+configure:2758: checking for gcc option to accept ISO C89
+configure:2822: gcc  -c -g -O2  conftest.c >&5
+configure:2822: $? = 0
+configure:2835: result: none needed
+configure:2860: checking how to run the C preprocessor
+configure:2891: gcc -E  conftest.c
+configure:2891: $? = 0
+configure:2905: gcc -E  conftest.c
 conftest.c:9:28: fatal error: ac_nonexistent.h: No such file or directory
 compilation terminated.
-configure:2902: $? = 1
+configure:2905: $? = 1
 configure: failed program was:
 | /* confdefs.h */
 | #define PACKAGE_NAME ""
@@ -122,13 +122,13 @@ configure: failed program was:
 | #define PACKAGE_URL ""
 | /* end confdefs.h.  */
 | #include <ac_nonexistent.h>
-configure:2927: result: gcc -E
-configure:2947: gcc -E  conftest.c
-configure:2947: $? = 0
-configure:2961: gcc -E  conftest.c
+configure:2930: result: gcc -E
+configure:2950: gcc -E  conftest.c
+configure:2950: $? = 0
+configure:2964: gcc -E  conftest.c
 conftest.c:9:28: fatal error: ac_nonexistent.h: No such file or directory
 compilation terminated.
-configure:2961: $? = 1
+configure:2964: $? = 1
 configure: failed program was:
 | /* confdefs.h */
 | #define PACKAGE_NAME ""
@@ -139,45 +139,45 @@ configure: failed program was:
 | #define PACKAGE_URL ""
 | /* end confdefs.h.  */
 | #include <ac_nonexistent.h>
-configure:2990: checking for library containing strerror
-configure:3021: gcc -o conftest -g -O2   conftest.c  >&5
-configure:3021: $? = 0
-configure:3038: result: none required
-configure:3063: checking for a BSD-compatible install
-configure:3131: result: /usr/bin/install -c
-configure:3185: checking for ranlib
-configure:3201: found /usr/bin/ranlib
-configure:3212: result: ranlib
-configure:3236: checking for autoconf
-configure:3252: found /usr/bin/autoconf
-configure:3264: result: autoconf
-configure:3274: checking for cp
-configure:3290: found /bin/cp
-configure:3302: result: cp
-configure:3312: checking for rm
-configure:3328: found /bin/rm
-configure:3340: result: rm
-configure:3356: checking for grep that handles long lines and -e
-configure:3414: result: /bin/grep
-configure:3419: checking for egrep
-configure:3481: result: /bin/grep -E
-configure:3486: checking for ANSI C header files
-configure:3506: gcc -c -g -O2  conftest.c >&5
-configure:3506: $? = 0
-configure:3579: gcc -o conftest -g -O2   conftest.c  >&5
-configure:3579: $? = 0
-configure:3579: ./conftest
-configure:3579: $? = 0
-configure:3590: result: yes
-configure:3601: checking for setenv
-configure:3601: gcc -o conftest -g -O2   conftest.c  >&5
-configure:3601: $? = 0
-configure:3601: result: yes
-configure:3601: checking for putenv
-configure:3601: gcc -o conftest -g -O2   conftest.c  >&5
-configure:3601: $? = 0
-configure:3601: result: yes
-configure:3792: creating ./config.status
+configure:2993: checking for library containing strerror
+configure:3024: gcc -o conftest -g -O2   conftest.c  >&5
+configure:3024: $? = 0
+configure:3041: result: none required
+configure:3066: checking for a BSD-compatible install
+configure:3134: result: /usr/bin/install -c
+configure:3188: checking for ranlib
+configure:3204: found /usr/bin/ranlib
+configure:3215: result: ranlib
+configure:3239: checking for autoconf
+configure:3255: found /usr/bin/autoconf
+configure:3267: result: autoconf
+configure:3277: checking for cp
+configure:3293: found /bin/cp
+configure:3305: result: cp
+configure:3315: checking for rm
+configure:3331: found /bin/rm
+configure:3343: result: rm
+configure:3359: checking for grep that handles long lines and -e
+configure:3417: result: /bin/grep
+configure:3422: checking for egrep
+configure:3484: result: /bin/grep -E
+configure:3489: checking for ANSI C header files
+configure:3509: gcc -c -g -O2  conftest.c >&5
+configure:3509: $? = 0
+configure:3582: gcc -o conftest -g -O2   conftest.c  >&5
+configure:3582: $? = 0
+configure:3582: ./conftest
+configure:3582: $? = 0
+configure:3593: result: yes
+configure:3604: checking for setenv
+configure:3604: gcc -o conftest -g -O2   conftest.c  >&5
+configure:3604: $? = 0
+configure:3604: result: yes
+configure:3604: checking for putenv
+configure:3604: gcc -o conftest -g -O2   conftest.c  >&5
+configure:3604: $? = 0
+configure:3604: result: yes
+configure:3799: creating ./config.status
 
 ## ---------------------- ##
 ## Running config.status. ##
@@ -194,7 +194,7 @@ generated by GNU Autoconf 2.68.  Invocation command line was
 
 on stravinsky.tim.linglan.net
 
-config.status:753: creating Makefile
+config.status:754: creating Makefile
 
 ## ---------------- ##
 ## Cache variables. ##
@@ -248,7 +248,7 @@ CFLAGS='-g -O2'
 CP='cp'
 CPP='gcc -E'
 CPPFLAGS=''
-DEFS='-DPACKAGE_NAME=\"\" -DPACKAGE_TARNAME=\"\" -DPACKAGE_VERSION=\"\" -DPACKAGE_STRING=\"\" -DPACKAGE_BUGREPORT=\"\" -DPACKAGE_URL=\"\" -DSTDC_HEADERS=1 -DHAVE_SETENV=1 -DHAVE_PUTENV=1 -DQROUTER_LIB_DIR=\"/usr/local/share/qrouter\" -DVERSION=\"1.1\"'
+DEFS='-DPACKAGE_NAME=\"\" -DPACKAGE_TARNAME=\"\" -DPACKAGE_VERSION=\"\" -DPACKAGE_STRING=\"\" -DPACKAGE_BUGREPORT=\"\" -DPACKAGE_URL=\"\" -DSTDC_HEADERS=1 -DHAVE_SETENV=1 -DHAVE_PUTENV=1 -DQROUTER_LIB_DIR=\"/usr/local/share/qrouter\" -DVERSION=\"1.1\" -DREVISION=\"40\"'
 ECHO_C=''
 ECHO_N='-n'
 ECHO_T=''
@@ -272,6 +272,7 @@ PACKAGE_URL=''
 PACKAGE_VERSION=''
 PATH_SEPARATOR=':'
 RANLIB='ranlib'
+REVISION='40'
 RM='rm'
 SHELL='/bin/sh'
 STDLIBS=''
@@ -327,5 +328,6 @@ target_alias=''
 #define HAVE_PUTENV 1
 #define QROUTER_LIB_DIR "/usr/local/share/qrouter"
 #define VERSION "1.1"
+#define REVISION "40"
 
 configure: exit 0

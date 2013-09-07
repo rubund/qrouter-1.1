@@ -585,6 +585,7 @@ CPPFLAGS
 LDFLAGS
 CFLAGS
 CC
+REVISION
 VERSION
 host_os
 host_vendor
@@ -2044,6 +2045,8 @@ case $host_os in *\ *) host_os=`echo "$host_os" | sed 's/ /-/g'`;; esac
 
 PACKAGE=qrouter
 VERSION=`cat ./VERSION | cut -d. -f1-2`
+REVISION=`cat ./VERSION | cut -d. -f3`
+
 
 
 test "$program_prefix" != NONE &&
@@ -3629,6 +3632,10 @@ _ACEOF
 
 cat >>confdefs.h <<_ACEOF
 #define VERSION "$VERSION"
+_ACEOF
+
+cat >>confdefs.h <<_ACEOF
+#define REVISION "$REVISION"
 _ACEOF
 
 
