@@ -230,9 +230,26 @@ LefNextToken(FILE *f, u_char ignore_eol)
 	curtoken = nexttoken;
 
     /* Find the next token; set to NULL if none (end-of-line). */
+    /* Treat quoted material as a single token */
 
-    while (!isspace(*nexttoken) && (*nexttoken != '\0') && (*nexttoken != '\n'))
-	nexttoken++;	/* skip non-whitespace (move past current token) */
+    if (*nexttoken == '\"') {
+	nexttoken++;
+	while (((*nexttoken != '\"') || (*(nexttoken - 1) == '\\')) &&
+		(*nexttoken != '\0')) {
+	    if (*nexttoken == '\n') { 	
+		if (fgets(nexttoken + 1, LEF_LINE_MAX -
+				(size_t)(nexttoken - line), f) == NULL)
+		    return NULL;
+	    }
+	    nexttoken++;	/* skip all in quotes (move past current token) */
+	}
+	if (*nexttoken == '\"')
+	    nexttoken++;
+    }
+    else {
+	while (!isspace(*nexttoken) && (*nexttoken != '\0') && (*nexttoken != '\n'))
+	    nexttoken++;	/* skip non-whitespace (move past current token) */
+    }
 
     /* Terminate the current token */
     if (*nexttoken != '\0') *nexttoken++ = '\0';
@@ -1556,6 +1573,9 @@ LefReadPin(lefMacro, f, pinname, pinNum, oscale)
  * LefEndStatement --
  *
  *	Read file input to EOF or a ';' token (end-of-statement)
+ *	If we encounter a quote, make sure we don't terminate
+ *	the statement on a semicolon that is part of the
+ *	quoted material.
  *
  *------------------------------------------------------------
  */

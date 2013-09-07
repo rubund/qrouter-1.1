@@ -244,7 +244,7 @@ main(int argc, char *argv[])
 	 }
 	 fclose(infoFILEptr);
       }
-      exit(0);
+      return 0;
    }
 
    if (optind < argc) {
@@ -444,7 +444,7 @@ main(int argc, char *argv[])
    if (Failfptr) fclose(Failfptr);
    if (CNfptr) fclose(CNfptr);
 
-   exit(0);
+   return 0;
 
 } /* main() */
 
