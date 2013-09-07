@@ -52,6 +52,7 @@ int   Numnets = 0;
 int   Numgates = 0;
 int   Numpins = 0;
 int   Verbose = 0;
+int   keepTrying = 0;
 
 int   pwrbus_src;
 
@@ -177,7 +178,7 @@ main(int argc, char *argv[])
    Filename[0] = 0;
    DEFfilename[0] = 0;
 
-   while ((i = getopt(argc, argv, "c:i:hv:p:g:")) != -1) {
+   while ((i = getopt(argc, argv, "c:i:hkv:p:g:")) != -1) {
       switch (i) {
 	 case 'c':
 	    configfile = strdup(optarg);
@@ -194,12 +195,15 @@ main(int argc, char *argv[])
 	 case 'g':
 	    gndnet = strdup(optarg);
 	    break;
-	 default:
-	    fprintf(stderr, "bad switch %d\n", i);
 	 case 'h':
 	    helpmessage();
 	    exit(0);
 	    break;
+	 case 'k':
+	    keepTrying = 1;
+	    break;
+	 default:
+	    fprintf(stderr, "bad switch %d\n", i);
       }
    }
 
@@ -833,7 +837,7 @@ dosecondstage()
 	    maxtries = TotalRoutes + failcount * 8;
 	    origcount = failcount;
 	 }
-	 else {
+	 else if (keepTrying == 0) {
 	    fprintf(stderr, "\nQrouter is stuck, abandoning remaining routes.\n");
 	    break;
 	 }
