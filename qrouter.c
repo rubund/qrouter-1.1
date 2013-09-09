@@ -544,9 +544,15 @@ void pathvia(FILE *cmd, int layer, int x, int y, int lastx, int lasty)
        fprintf(cmd, "%s ( %d %d ) ", CIFLayer[layer], x, y);
     }
     else {
+       // Normally the path will be manhattan and only one of
+       // these will be true.  But if the via gets an offset to
+       // avoid a DRC spacing violation with an adjacent via,
+       // then we may need to apply both paths to make a dog-leg
+       // route to the via.
+
        if (x != lastx)
 	  pathto(cmd, x, y, TRUE, lastx, y);
-       else if (y != lasty)
+       if (y != lasty)
 	  pathto(cmd, x, y, FALSE, x, lasty);
     }
     fprintf(cmd, "%s ", s);
@@ -1674,6 +1680,30 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
    int stubroute = 0;
    u_char cancel;
 
+   int viaOffsetX[MAX_LAYERS][2];
+   int viaOffsetY[MAX_LAYERS][2];
+
+   /* Compute via offsets, if needed for adjacent vias */
+
+   for (layer = 0; layer < Num_layers - 1; layer++) {
+
+      dc = LefGetRouteSpacing(layer) + LefGetViaWidth(layer, layer, 1)
+		- PitchY[layer] - EPS;
+      viaOffsetY[layer][0] = (dc > 0.0) ? (int)(oscale * dc * 0.5) : 0;
+
+      dc = LefGetRouteSpacing(layer) + LefGetViaWidth(layer, layer, 0)
+		- PitchX[layer] - EPS;
+      viaOffsetX[layer][0] = (dc > 0.0) ? (int)(oscale * dc * 0.5) : 0;
+
+      dc = LefGetRouteSpacing(layer + 1) + LefGetViaWidth(layer, layer + 1, 1)
+		- PitchY[layer + 1] - EPS;
+      viaOffsetY[layer][1] = (dc > 0.0) ? (int)(oscale * dc * 0.5) : 0;
+
+      dc = LefGetRouteSpacing(layer + 1) + LefGetViaWidth(layer, layer + 1, 0)
+		- PitchX[layer + 1] - EPS;
+      viaOffsetX[layer][1] = (dc > 0.0) ? (int)(oscale * dc * 0.5) : 0;
+   }
+
    Pathon = -1;
 
    /* Insert routed net here */
@@ -1990,7 +2020,80 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 			lastx = x;
 			lasty = y;
 		     }
-		     pathvia(Cmd, layer, x, y, lastx, lasty);
+		     // Check for vias between adjacent but different nets
+		     // that need position offsets to avoid a DRC spacing error
+
+		     if (viaOffsetX[layer][0] > 0) {
+			if (seg->x1 > 0 && ((tdir = (Obs[layer][OGRID(seg->x1 - 1,
+				seg->y1, layer)] & ~PINOBSTRUCTMASK)) != 
+				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+			   pathvia(Cmd, layer, x + viaOffsetX[layer][0],
+					y, lastx, lasty);
+			}
+			else if ((seg->x1 < NumChannelsX[layer] - 1)
+				&& ((tdir = (Obs[layer][OGRID(seg->x1 + 1, seg->y1,
+				layer)] & ~PINOBSTRUCTMASK)) != 
+				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+			   pathvia(Cmd, layer, x - viaOffsetX[layer][0],
+					y, lastx, lasty);
+			}
+			else
+			    pathvia(Cmd, layer, x, y, lastx, lasty);
+		     }
+		     else if (viaOffsetY[layer][0] > 0) {
+			if (seg->y1 > 0 && ((tdir = (Obs[layer][OGRID(seg->x1,
+				seg->y1 - 1, layer)] & ~PINOBSTRUCTMASK)) != 
+				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+			   pathvia(Cmd, layer, x, y - viaOffsetY[layer][0],
+					lastx, lasty);
+			}
+			else if ((seg->y1 < NumChannelsY[layer] - 1)
+				&& ((tdir = (Obs[layer][OGRID(seg->x1, seg->y1 + 1,
+				layer)] & ~PINOBSTRUCTMASK)) != 
+				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+			   pathvia(Cmd, layer, x, y - viaOffsetY[layer][0],
+					lastx, lasty);
+			}
+			else
+			    pathvia(Cmd, layer, x, y, lastx, lasty);
+		     }
+		     else if (viaOffsetX[layer][1] > 0) {
+			if (seg->x1 > 0 && ((tdir = (Obs[layer + 1][OGRID(seg->x1 - 1,
+				seg->y1, layer + 1)] & ~PINOBSTRUCTMASK)) != 
+				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+			   pathvia(Cmd, layer, x + viaOffsetX[layer][1],
+					y, lastx, lasty);
+			}
+			else if ((seg->x1 < NumChannelsX[layer + 1] - 1)
+				&& ((tdir = (Obs[layer + 1][OGRID(seg->x1 + 1, seg->y1,
+				layer + 1)] & ~PINOBSTRUCTMASK)) != 
+				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+			   pathvia(Cmd, layer, x - viaOffsetX[layer][1],
+					y, lastx, lasty);
+			}
+			else
+			    pathvia(Cmd, layer, x, y, lastx, lasty);
+		     }
+		     else if (viaOffsetY[layer][1] > 0) {
+			if (seg->y1 > 0 && ((tdir = (Obs[layer + 1][OGRID(seg->x1,
+				seg->y1 - 1, layer + 1)] & ~PINOBSTRUCTMASK)) != 
+				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+			   pathvia(Cmd, layer, x, y - viaOffsetY[layer][1],
+					lastx, lasty);
+			}
+			else if ((seg->y1 < NumChannelsY[layer + 1] - 1)
+				&& ((tdir = (Obs[layer][OGRID(seg->x1, seg->y1 + 1,
+				layer + 1)] & ~PINOBSTRUCTMASK)) != 
+				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+			   pathvia(Cmd, layer, x, y - viaOffsetY[layer][1],
+					lastx, lasty);
+			}
+			else
+			    pathvia(Cmd, layer, x, y, lastx, lasty);
+		     }
+		     else
+			pathvia(Cmd, layer, x, y, lastx, lasty);
+
 		     lastx = x;
 		     lasty = y;
 		  }

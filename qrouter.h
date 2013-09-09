@@ -319,6 +319,7 @@ int    doroute(NET net, u_char stage);
 int    route_segs(NET net, ROUTE rt, u_char stage);
 ROUTE  createemptyroute();
 void   emit_routes(char *filename, double oscale);
+void   mark_placed_vias();
 
 void   createMask();
 void   fillMask();
