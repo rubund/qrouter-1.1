@@ -111,8 +111,11 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
        x = ntap->gridx;
        y = ntap->gridy;
        Pr = &Obs2[lay][OGRID(x, y, lay)];
-       if ((Pr->flags & (newflags | PR_COST)) == PR_COST)
+       if ((Pr->flags & (newflags | PR_COST)) == PR_COST) {
+	  fprintf(stderr, "Error:  Tap position %d, %d layer %d not "
+			"marked as source!\n", x, y, lay);
 	  return -1;	// This should not happen.
+       }
 
        if (Pr->flags & PR_SOURCE) {
 	  result = 1;				// Node is already connected!
@@ -292,7 +295,7 @@ int set_routes_to_net(NET net, int newflags, POINT *pushlist, SEG bbox, u_char s
 		n2 = Nodeloc[lay][OGRID(x, y, lay)];
 		if ((n2 != (NODE)NULL) && (n2 != net->netnodes)) {
 		   result = set_node_to_net(n2, newflags, pushlist, bbox, stage);
-		   if (result < 0) return result;
+		   // On error, continue processing
 		}
 
 		// Process top part of via

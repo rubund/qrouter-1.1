@@ -721,7 +721,7 @@ void create_obstructions_from_nodes()
 			        if (k & PINOBSTRUCTMASK) {
 			           if ((k & ~PINOBSTRUCTMASK) != (u_int)node->netnum) {
 				       Obs[ds->layer + 1][OGRID(gridx, gridy,
-						ds->layer + 1)] = 0;
+						ds->layer + 1)] = NO_NET;
 				       Nodeloc[ds->layer + 1][OGRID(gridx, gridy,
 						ds->layer + 1)] = (NODE)NULL;
 				       Nodesav[ds->layer + 1][OGRID(gridx, gridy,
