@@ -42,12 +42,20 @@ enum port_uses {PORT_USE_DEFAULT = 0, PORT_USE_SIGNAL,
         PORT_USE_ANALOG, PORT_USE_POWER, PORT_USE_GROUND,
         PORT_USE_CLOCK};
 
+/* Structure to hold information about spacing rules */
+typedef struct _lefSpacingRule *lefSpacingPtr;
+typedef struct _lefSpacingRule {
+    lefSpacingPtr next;
+    double width;	/* width, in microns */
+    double spacing;	/* minimum spacing rule, in microns */
+} lefSpacingRule;
+
 /* Structure used to maintain default routing information for each	*/
 /* routable layer type.							*/
 
 typedef struct {
-    double  width;	/* width, in microns */
-    double  spacing;	/* minimum spacing rule, in microns */
+    lefSpacingRule *spacing;	/* spacing rules, ordered by width */
+    double  width;	/* nominal route width, in microns */
     double  pitch;	/* route pitch, in microns */
     double  offset;	/* route track offset from origin, in microns */
     u_char hdirection;	/* horizontal direction preferred */
@@ -120,6 +128,7 @@ double LefGetRouteKeepout(int layer);
 double LefGetRouteWidth(int layer);
 double LefGetViaWidth(int base, int layer, int dir);
 double LefGetRouteSpacing(int layer);
+double LefGetRouteWideSpacing(int layer, double width);
 double LefGetRoutePitch(int layer);
 double LefGetRouteOffset(int layer);
 char  *LefGetRouteName(int layer);

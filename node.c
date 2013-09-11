@@ -289,6 +289,34 @@ check_obstruct(int gridx, int gridy, DSEG ds, double dx, double dy)
 }
 
 /*--------------------------------------------------------------*/
+/* Find the amount of clearance needed between an obstruction	*/
+/* and a route track position.  This takes into consideration	*/
+/* whether the obstruction is wide or narrow metal, if the	*/
+/* spacing rules are graded according to metal width, and if a	*/
+/* via placed at the position is or is not symmetric in X and Y	*/
+/*--------------------------------------------------------------*/
+
+double get_clear(int lay, int horiz, DSEG rect) {
+   double vdelta, v2delta, mdelta, mwidth;
+
+   vdelta = LefGetViaWidth(lay, lay, 1 - horiz);
+   if (lay > 0) {
+	v2delta = LefGetViaWidth(lay - 1, lay, 1 - horiz);
+	if (v2delta > vdelta) vdelta = v2delta;
+   }
+   vdelta = vdelta / 2.0;
+
+   // Spacing rule is determined by the minimum metal width,
+   // either in X or Y, regardless of the position of the
+   // metal being checked.
+
+   mwidth = MIN(rect->x2 - rect->x1, rect->y2 - rect->y1);
+   mdelta = LefGetRouteWideSpacing(lay, mwidth);
+
+   return vdelta + mdelta;
+}
+
+/*--------------------------------------------------------------*/
 /* create_obstructions_from_gates()				*/
 /*								*/
 /*  Fills in the Obs[][] grid from obstructions that were	*/
@@ -306,17 +334,8 @@ void create_obstructions_from_gates()
     GATE g;
     DSEG ds;
     int i, gridx, gridy, *obsptr;
-    double dx, dy, delta[MAX_LAYERS];
+    double dx, dy, deltax, deltay, delta[MAX_LAYERS];
     float dist;
-
-    // Get, and store, information for each layer on how much we
-    // need to expand an obstruction layer to account for spacing
-    // and route width to avoid creating a DRC error with a route. 
-
-    for (i = 0; i < Num_layers; i++) {
-	// delta[i] = LefGetRouteKeepout(i);
-	delta[i] = LefGetViaWidth(i, i, 0) / 2.0 + LefGetRouteSpacing(i);
-    }
 
     // Give a single net number to all obstructions, over the range of the
     // number of known nets, so these positions cannot be routed through.
@@ -331,20 +350,22 @@ void create_obstructions_from_gates()
     for (g = Nlgates; g; g = g->next) {
        for (ds = g->obs; ds; ds = ds->next) {
 
-	  gridx = (int)((ds->x1 - Xlowerbound - delta[ds->layer])
+	  deltax = get_clear(ds->layer, 1, ds);
+	  gridx = (int)((ds->x1 - Xlowerbound - deltax)
 			/ PitchX[ds->layer]) - 1;
 	  while (1) {
 	     dx = (gridx * PitchX[ds->layer]) + Xlowerbound;
-	     if ((dx + EPS) > (ds->x2 + delta[ds->layer])
+	     if ((dx + EPS) > (ds->x2 + deltax)
 			|| gridx >= NumChannelsX[ds->layer]) break;
-	     else if ((dx - EPS) > (ds->x1 - delta[ds->layer]) && gridx >= 0) {
-	        gridy = (int)((ds->y1 - Ylowerbound - delta[ds->layer])
+	     else if ((dx - EPS) > (ds->x1 - deltax) && gridx >= 0) {
+		deltay = get_clear(ds->layer, 0, ds);
+	        gridy = (int)((ds->y1 - Ylowerbound - deltay)
 			/ PitchY[ds->layer]) - 1;
 	        while (1) {
 		   dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
-	           if ((dy + EPS) > (ds->y2 + delta[ds->layer])
+	           if ((dy + EPS) > (ds->y2 + deltay)
 				|| gridy >= NumChannelsY[ds->layer]) break;
-		   if ((dy - EPS) > (ds->y1 - delta[ds->layer]) && gridy >= 0)
+		   if ((dy - EPS) > (ds->y1 - deltay) && gridy >= 0)
 		      check_obstruct(gridx, gridy, ds, dx, dy);
 
 		   gridy++;
@@ -371,20 +392,22 @@ void create_obstructions_from_gates()
 			g->gatename, i);
              for (ds = g->taps[i]; ds; ds = ds->next) {
 
-		gridx = (int)((ds->x1 - Xlowerbound - delta[ds->layer])
+		deltax = get_clear(ds->layer, 1, ds);
+		gridx = (int)((ds->x1 - Xlowerbound - deltax)
 			/ PitchX[ds->layer]) - 1;
 		while (1) {
 		   dx = (gridx * PitchX[ds->layer]) + Xlowerbound;
-		   if (dx > (ds->x2 + delta[ds->layer])
+		   if (dx > (ds->x2 + deltax)
 				|| gridx >= NumChannelsX[ds->layer]) break;
-		   else if (dx >= (ds->x1 - delta[ds->layer]) && gridx >= 0) {
-		      gridy = (int)((ds->y1 - Ylowerbound - delta[ds->layer])
+		   else if (dx >= (ds->x1 - deltax) && gridx >= 0) {
+		      deltay = get_clear(ds->layer, 0, ds);
+		      gridy = (int)((ds->y1 - Ylowerbound - deltay)
 				/ PitchY[ds->layer]) - 1;
 		      while (1) {
 		         dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
-		         if (dy > (ds->y2 + delta[ds->layer])
+		         if (dy > (ds->y2 + deltay)
 					|| gridy >= NumChannelsY[ds->layer]) break;
-		         if (dy >= (ds->y1 - delta[ds->layer]) && gridy >= 0)
+		         if (dy >= (ds->y1 - deltay) && gridy >= 0)
 			    check_obstruct(gridx, gridy, ds, dx, dy);
 
 		         gridy++;
@@ -460,7 +483,7 @@ void create_obstructions_from_nodes()
     DSEG ds;
     u_int dir, k;
     int i, gx, gy, gridx, gridy, net;
-    double dx, dy, delta[MAX_LAYERS], viaclear[MAX_LAYERS];
+    double dx, dy, deltax, deltay;
     float dist, xdist;
     double offmaxx[MAX_LAYERS], offmaxy[MAX_LAYERS];
 
@@ -468,9 +491,6 @@ void create_obstructions_from_nodes()
     // widths, which may be bigger than route widths.
 
     for (i = 0; i < Num_layers; i++) {
-	// delta[i] = LefGetRouteKeepout(i);
-	delta[i] = LefGetViaWidth(i, i, 0) / 2.0 + LefGetRouteSpacing(i);
-
 	offmaxx[i] = PitchX[i] - LefGetRouteSpacing(i)
 		- 0.5 * (LefGetRouteWidth(i) + LefGetViaWidth(i, i, 0));
 	offmaxy[i] = PitchY[i] - LefGetRouteSpacing(i)
@@ -744,36 +764,30 @@ void create_obstructions_from_nodes()
 	     // all inside areas because the tap rectangles often overlap,
 	     // and one rectangle's halo may be inside another tap.
 
-	     // NOTE:  Use of "viaclear" instead of "delta" below causes
-	     // a conservative definition of taps.  When metal spacing
-	     // gets too tight on both sides of a port, the tap point
-	     // there becomes disabled even if a non-via route could be
-	     // placed there.  However, in general, if obstructions are
-	     // close in on both sides of a tap point, then there will
-	     // be no way to place anything except a via there, anyway.
-
              for (ds = g->taps[i]; ds; ds = ds->next) {
-		gridx = (int)((ds->x1 - Xlowerbound - delta[ds->layer])
+		deltax = get_clear(ds->layer, 1, ds);
+		gridx = (int)((ds->x1 - Xlowerbound - deltax)
 			/ PitchX[ds->layer]) - 1;
 
 		while (1) {
 		   dx = (gridx * PitchX[ds->layer]) + Xlowerbound;
 
-		   if ((dx + EPS) > (ds->x2 + delta[ds->layer]) ||
+		   if ((dx + EPS) > (ds->x2 + deltax) ||
 				gridx >= NumChannelsX[ds->layer])
 		      break;
 
-		   else if ((dx - EPS) > (ds->x1 - delta[ds->layer]) && gridx >= 0) {
-		      gridy = (int)((ds->y1 - Ylowerbound - delta[ds->layer])
+		   else if ((dx - EPS) > (ds->x1 - deltax) && gridx >= 0) {
+		      deltay = get_clear(ds->layer, 0, ds);
+		      gridy = (int)((ds->y1 - Ylowerbound - deltay)
 				/ PitchY[ds->layer]) - 1;
 
 		      while (1) {
 		         dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
-		         if ((dy + EPS) > (ds->y2 + delta[ds->layer]) ||
+		         if ((dy + EPS) > (ds->y2 + deltay) ||
 				gridy >= NumChannelsY[ds->layer])
 			    break;
 
-		         if ((dy - EPS) > (ds->y1 - delta[ds->layer]) && gridy >= 0) {
+		         if ((dy - EPS) > (ds->y1 - deltay) && gridy >= 0) {
 			    xdist = 0.5 * LefGetRouteWidth(ds->layer);
 
 			    // Area inside halo around defined pin geometry.

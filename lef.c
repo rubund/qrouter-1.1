@@ -629,7 +629,8 @@ LefGetRouteKeepout(int layer)
     lefl = LefFindLayerByNum(layer);
     if (lefl) {
 	if (lefl->lefClass == CLASS_ROUTE) {
-	    return lefl->info.route.width / 2.0 + lefl->info.route.spacing;
+	    return lefl->info.route.width / 2.0
+		+ lefl->info.route.spacing->spacing;
 	}
     }
     return MIN(PitchX[layer], PitchY[layer]) - PathWidth[layer] / 2.0;
@@ -730,7 +731,7 @@ LefGetViaWidth(int base, int layer, int dir)
 
 /*
  *------------------------------------------------------------
- * And another such routine, for route spacing
+ * And another such routine, for route spacing (minimum width)
  *------------------------------------------------------------
  */
 
@@ -742,7 +743,35 @@ LefGetRouteSpacing(int layer)
     lefl = LefFindLayerByNum(layer);
     if (lefl) {
 	if (lefl->lefClass == CLASS_ROUTE) {
-	    return lefl->info.route.spacing;
+	    return lefl->info.route.spacing->spacing;
+	}
+    }
+    return MIN(PitchX[layer], PitchY[layer]) / 2.0;
+}
+
+/*
+ *------------------------------------------------------------
+ * Find route spacing to a metal layer of specific width
+ *------------------------------------------------------------
+ */
+
+double
+LefGetRouteWideSpacing(int layer, double width)
+{
+    LefList lefl;
+    lefSpacingRule *srule;
+    double spacing;
+
+    lefl = LefFindLayerByNum(layer);
+    if (lefl) {
+	if (lefl->lefClass == CLASS_ROUTE) {
+	    // Prepare a default in case of bad values
+	    spacing = lefl->info.route.spacing->spacing;
+	    for (srule = lefl->info.route.spacing; srule; srule = srule->next) {
+		if (srule->width > width) break;
+		spacing = srule->spacing;
+	    }
+	    return spacing;
 	}
     }
     return MIN(PitchX[layer], PitchY[layer]) / 2.0;
@@ -1895,6 +1924,7 @@ LefReadLayerSection(f, lname, mode, lefl)
     struct seg_ viaArea;
     int curlayer = -1;
     double dvalue, oscale;
+    lefSpacingRule *newrule, *testrule;
 
     /* These are defined in the order of CLASS_* in lefInt.h */
     static char *layer_type_keys[] = {
@@ -1960,7 +1990,7 @@ LefReadLayerSection(f, lname, mode, lefl)
 		    if (typekey == CLASS_ROUTE) {
 
 			lefl->info.route.width = 0.0;
-			lefl->info.route.spacing = 0.0;
+			lefl->info.route.spacing = NULL;
 			lefl->info.route.pitch = 0.0;
 			lefl->info.route.offset = 0.0;
 			lefl->info.route.hdirection = (u_char)0;
@@ -2010,9 +2040,39 @@ LefReadLayerSection(f, lname, mode, lefl)
 		token = LefNextToken(f, TRUE);
 		typekey = Lookup(token, spacing_keys);
 
-		// For now we will ignore spacing ranges. . .
-		if (typekey != LEF_SPACING_RANGE)
-		    lefl->info.route.spacing = dvalue / (double)oscale;
+		newrule = (lefSpacingRule *)malloc(sizeof(lefSpacingRule));
+
+		// If no range specified, then the rule goes in front
+		if (typekey != LEF_SPACING_RANGE) {
+		    newrule->spacing = dvalue / (double)oscale;
+		    newrule->width = 0.0;
+		    newrule->next = lefl->info.route.spacing;
+		    lefl->info.route.spacing = newrule;
+		}
+		else {
+		    // Get range minimum, ignore range maximum, and sort
+		    // the spacing order.
+		    newrule->spacing = dvalue / (double)oscale;
+		    token = LefNextToken(f, TRUE);
+		    sscanf(token, "%lg", &dvalue);
+		    newrule->width = dvalue / (double)oscale;
+		    for (testrule = lefl->info.route.spacing; testrule;
+				testrule = testrule->next)
+			if (testrule->next == NULL || testrule->next->width >
+				newrule->width)
+			    break;
+
+		    if (!testrule) {
+			newrule->next = NULL;
+			lefl->info.route.spacing = newrule;
+		    }
+		    else {
+			newrule->next = testrule->next;
+			testrule->next = newrule;
+		    }
+		    token = LefNextToken(f, TRUE);
+		    typekey = Lookup(token, spacing_keys);
+		}
 		if (typekey != LEF_END_LAYER_SPACING)
 		    LefEndStatement(f);
 		break;
