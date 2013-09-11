@@ -1242,18 +1242,19 @@ int route_segs(NET net, ROUTE rt, u_char stage)
      }
   }
 
-  // Set associated routes to PR_SOURCE
-  rval = set_routes_to_net(net, PR_SOURCE, &glist, &bbox, stage);
-
-  if (rval == -2) {
-     printf("Node of net %s has no tap points---unable to route!\n", net->netname);
-     return -1;
-  }
-
-  // Now search for all other nodes on the same net that have not yet been
-  // routed, and flag all of their taps as PR_TARGET
-
   if (do_pwrbus == FALSE) {
+
+     // Set associated routes to PR_SOURCE
+     rval = set_routes_to_net(net, PR_SOURCE, &glist, &bbox, stage);
+
+     if (rval == -2) {
+        printf("Node of net %s has no tap points---unable to route!\n", net->netname);
+        return -1;
+     }
+
+     // Now search for all other nodes on the same net that have not yet been
+     // routed, and flag all of their taps as PR_TARGET
+
      result = 0;
      for (n2 = n1->next; n2; n2 = n2->next) {
         rval = set_node_to_net(n2, PR_TARGET, NULL, &bbox, stage);
@@ -1270,7 +1271,15 @@ int route_segs(NET net, ROUTE rt, u_char stage)
      /* If there's only one node left and it's not routable, then fail. */
      if (result == -1) return -1;
   }
-  else {
+  else {	/* Do this for power bus connections */
+
+     /* Set all nodes that are NOT n1 to an unused net number */
+     for (n2 = net->netnodes; n2; n2 = n2->next) {
+	if (n2 != n1) {
+	   disable_node_nets(n2);
+	}
+     }
+
      pwrbus_src++;
      if ((pwrbus_src > net->numnodes) || (n1 == NULL))
 	result = 0;

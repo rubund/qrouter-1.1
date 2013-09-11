@@ -44,7 +44,10 @@ set_powerbus_to_net(int netnum)
 	     for (y = 0; y < NumChannelsY[lay]; y++)
 		if ((Obs[lay][OGRID(x, y, lay)] & NETNUM_MASK) == netnum) {
 		   Pr = &Obs2[lay][OGRID(x, y, lay)];
-		   if (!(Pr->flags & PR_SOURCE)) {
+		   // Skip locations that have been purposefully disabled
+		   if (!(Pr->flags & PR_COST) && (Pr->prdata.net == Numnets))
+		      continue;
+		   else if (!(Pr->flags & PR_SOURCE)) {
 		      Pr->flags |= (PR_TARGET | PR_COST);
 		      Pr->prdata.cost = MAXRT;
 		   }
@@ -96,7 +99,7 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
     DPOINT ntap;
     PROUTE *Pr;
 
-    /* If called from set_route_to_net, the node has no taps, and the	*/
+    /* If called from set_routes_to_net, the node has no taps, and the	*/
     /* net is a power bus, just return.					*/
 
     if ((node->taps == NULL) && (node->extend == NULL)) {
@@ -239,6 +242,51 @@ int set_node_to_net(NODE node, int newflags, POINT *pushlist, SEG bbox, u_char s
 	  return -2;
     }
 
+    return result;
+}
+
+/*--------------------------------------------------------------*/
+/* Set all taps of node "node" to Numnets, so that it will not	*/
+/* be routed to. 						*/
+/*--------------------------------------------------------------*/
+
+int disable_node_nets(NODE node)
+{
+    int x, y, lay;
+    int result = 0;
+    DPOINT ntap;
+    PROUTE *Pr;
+
+    /* Process tap points of the node */
+
+    for (ntap = node->taps; ntap; ntap = ntap->next) {
+       lay = ntap->layer;
+       x = ntap->gridx;
+       y = ntap->gridy;
+       Pr = &Obs2[lay][OGRID(x, y, lay)];
+       if (Pr->flags & PR_SOURCE || Pr->flags & PR_TARGET || Pr->flags & PR_COST) {
+	  result = 1;
+       }
+       else if (Pr->prdata.net == node->netnum) {
+	  Pr->prdata.net = Numnets;
+       }
+    }
+
+    // Do the same for point in the halo around the tap, but only if
+    // they have been attached to the net during a past routing run.
+
+    for (ntap = node->extend; ntap; ntap = ntap->next) {
+       lay = ntap->layer;
+       x = ntap->gridx;
+       y = ntap->gridy;
+       Pr = &Obs2[lay][OGRID(x, y, lay)];
+       if (Pr->flags & PR_SOURCE || Pr->flags & PR_TARGET || Pr->flags & PR_COST) {
+	  result = 1;
+       }
+       else if (Pr->prdata.net == node->netnum) {
+	  Pr->prdata.net = Numnets;
+       }
+    }
     return result;
 }
 

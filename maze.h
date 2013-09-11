@@ -9,6 +9,7 @@
 
 void	set_powerbus_to_net(int netnum);
 int     set_node_to_net(NODE node, int newnet, POINT *pushlist, SEG bbox, u_char stage);
+int	disable_node_nets(NODE node);
 int     set_routes_to_net(NET net, int newnet, POINT *pushlist, SEG bbox, u_char stage);
 u_char  ripup_net(NET net, u_char restore);
 int     eval_pt(GRIDP *ept, u_char flags, u_char stage);
