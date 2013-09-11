@@ -722,26 +722,26 @@ void writeback_segment(SEG seg, int netnum)
       Obs[seg->layer + 1][OGRID(seg->x1, seg->y1, seg->layer + 1)] = netnum;
       if (needblockX[seg->layer + 1]) {
 	 if ((seg->x1 < (NumChannelsX[seg->layer + 1] - 1)) &&
-		(Obs[seg->layer + 1][OGRID(seg->x1 + 1, i, seg->layer + 1)]
+		(Obs[seg->layer + 1][OGRID(seg->x1 + 1, seg->y1, seg->layer + 1)]
 		& NETNUM_MASK) == 0)
- 	    Obs[seg->layer + 1][OGRID(seg->x1 + 1, i, seg->layer + 1)] =
+ 	    Obs[seg->layer + 1][OGRID(seg->x1 + 1, seg->y1, seg->layer + 1)] =
 			(NO_NET | ROUTED_NET);
 	 if ((seg->x1 > 0) &&
-		(Obs[seg->layer + 1][OGRID(seg->x1 - 1, i, seg->layer + 1)]
+		(Obs[seg->layer + 1][OGRID(seg->x1 - 1, seg->y1, seg->layer + 1)]
 		& NETNUM_MASK) == 0)
-	    Obs[seg->layer + 1][OGRID(seg->x1 - 1, i, seg->layer + 1)] =
+	    Obs[seg->layer + 1][OGRID(seg->x1 - 1, seg->y1, seg->layer + 1)] =
 			(NO_NET | ROUTED_NET);
       }
       if (needblockY[seg->layer + 1]) {
 	 if ((seg->y1 < (NumChannelsY[seg->layer + 1] - 1)) &&
-		(Obs[seg->layer + 1][OGRID(i, seg->y1 + 1, seg->layer + 1)]
+		(Obs[seg->layer + 1][OGRID(seg->x1, seg->y1 + 1, seg->layer + 1)]
 		& NETNUM_MASK) == 0)
-	    Obs[seg->layer + 1][OGRID(i, seg->y1 + 1, seg->layer + 1)] =
+	    Obs[seg->layer + 1][OGRID(seg->x1, seg->y1 + 1, seg->layer + 1)] =
 			(NO_NET | ROUTED_NET);
 	 if ((seg->y1 > 0) &&
-		(Obs[seg->layer + 1][OGRID(i, seg->y1 - 1, seg->layer + 1)]
+		(Obs[seg->layer + 1][OGRID(seg->x1, seg->y1 - 1, seg->layer + 1)]
 		& NETNUM_MASK) == 0)
-	    Obs[seg->layer + 1][OGRID(i, seg->y1 - 1, seg->layer + 1)] =
+	    Obs[seg->layer + 1][OGRID(seg->x1, seg->y1 - 1, seg->layer + 1)] =
 			(NO_NET | ROUTED_NET);
       }
    }
