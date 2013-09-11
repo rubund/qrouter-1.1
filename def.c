@@ -293,7 +293,7 @@ DefAddRoutes(FILE *f, float oscale, NET net, char special)
 		         drect->y1 = y + w;
 		         drect->y2 = ly - w;
 		      }
-		      drect->layer = lr->layer;
+		      drect->layer = routeLayer;
 		      drect->next = UserObs;
 		      UserObs = drect;
 		   }
