@@ -172,13 +172,14 @@ main(int argc, char *argv[])
    char DEFfilename[256];
    char Filename[256];
    double oscale, sreq;
+   int iscale = 1;
 
    NET net;
     
    Filename[0] = 0;
    DEFfilename[0] = 0;
 
-   while ((i = getopt(argc, argv, "c:i:hkv:p:g:")) != -1) {
+   while ((i = getopt(argc, argv, "c:i:hkv:p:g:r:")) != -1) {
       switch (i) {
 	 case 'c':
 	    configfile = strdup(optarg);
@@ -194,6 +195,13 @@ main(int argc, char *argv[])
 	    break;
 	 case 'g':
 	    gndnet = strdup(optarg);
+	    break;
+	 case 'r':
+	    if (sscanf(optarg, "%d", &iscale) != 1) {
+		fprintf(stderr, "Bad resolution scalefactor \"%s\", "
+			"integer expected.\n", optarg);
+		iscale = 1;
+	    }
 	    break;
 	 case 'h':
 	    helpmessage();
@@ -267,7 +275,8 @@ main(int argc, char *argv[])
 			// set from within DefRead() due to reading in
 			// existing nets.
 
-   oscale = (double)DefRead(DEFfilename);
+   oscale = (double)((float)iscale * DefRead(DEFfilename));
+
    create_netorder();
 
    set_num_channels();		// If not called from DefRead()
@@ -391,7 +400,7 @@ main(int argc, char *argv[])
 
    // Finish up by writing the routes to an annotated DEF file
     
-   emit_routes(DEFfilename, oscale);
+   emit_routes(DEFfilename, oscale, iscale);
 
    fprintf(stdout, "----------------------------------------------\n");
    fprintf(stdout, "Final: ");
@@ -456,7 +465,8 @@ main(int argc, char *argv[])
 /*	a width.						*/
 /*--------------------------------------------------------------*/
 
-void pathstart(FILE *cmd, int layer, int x, int y, u_char special, double oscale)
+void pathstart(FILE *cmd, int layer, int x, int y, u_char special, double oscale,
+		double invscale)
 {
    if (Pathon == 1) {
       fprintf( stderr, "pathstart():  Major error.  Started a new "
@@ -470,11 +480,11 @@ void pathstart(FILE *cmd, int layer, int x, int y, u_char special, double oscale
       else
 	 fprintf(cmd, "\n  NEW ");
       if (special)
-         fprintf(cmd, "%s %d ( %d %d ) ", CIFLayer[layer],
-			(int)(oscale * LefGetViaWidth(layer, layer, 0) + 0.5),
-			x, y);
+         fprintf(cmd, "%s %g ( %g %g ) ", CIFLayer[layer],
+			invscale * (int)(oscale * LefGetViaWidth(layer, layer, 0) + 0.5),
+			invscale * x, invscale * y);
       else
-         fprintf(cmd, "%s ( %d %d ) ", CIFLayer[layer], x, y);
+         fprintf(cmd, "%s ( %g %g ) ", CIFLayer[layer], invscale * x, invscale * y);
    }
    Pathon = 1;
 
@@ -488,7 +498,8 @@ void pathstart(FILE *cmd, int layer, int x, int y, u_char special, double oscale
 /*   SIDE EFFECTS: 						*/
 /*--------------------------------------------------------------*/
 
-void pathto(FILE *cmd, int x, int y, int horizontal, int lastx, int lasty)
+void pathto(FILE *cmd, int x, int y, int horizontal, int lastx, int lasty,
+		double invscale)
 {
     if (Pathon <= 0) {
 	fprintf(stderr, "pathto():  Major error.  Added to a "
@@ -503,21 +514,21 @@ void pathto(FILE *cmd, int x, int y, int horizontal, int lastx, int lasty)
 
     if ((x != lastx) && (y != lasty)) {
 	if (horizontal)
-	   pathto(cmd, x, y, FALSE, x, lasty);
+	   pathto(cmd, x, y, FALSE, x, lasty, invscale);
 	else
-	   pathto(cmd, x, y, TRUE, lastx, y);
+	   pathto(cmd, x, y, TRUE, lastx, y, invscale);
     }
 
     fprintf(cmd, "( ");
     if (horizontal)
-	fprintf(cmd, "%d ", x);
+	fprintf(cmd, "%g ", invscale * x);
     else
 	fprintf(cmd, "* ");
 
     if (horizontal)
 	fprintf(cmd, "* ");
     else
-	fprintf(cmd, "%d ", y);
+	fprintf(cmd, "%g ", invscale * y);
 
     fprintf(cmd, ") ");
 
@@ -531,7 +542,8 @@ void pathto(FILE *cmd, int x, int y, int horizontal, int lastx, int lasty)
 /*   SIDE EFFECTS: 						*/
 /*--------------------------------------------------------------*/
 
-void pathvia(FILE *cmd, int layer, int x, int y, int lastx, int lasty)
+void pathvia(FILE *cmd, int layer, int x, int y, int lastx, int lasty,
+		double invscale)
 {
     char *s;
 
@@ -541,7 +553,7 @@ void pathvia(FILE *cmd, int layer, int x, int y, int lastx, int lasty)
 	  fprintf(cmd, "+ ROUTED ");
        else 
 	  fprintf(cmd, "\n  NEW ");
-       fprintf(cmd, "%s ( %d %d ) ", CIFLayer[layer], x, y);
+       fprintf(cmd, "%s ( %g %g ) ", CIFLayer[layer], invscale * x, invscale * y);
     }
     else {
        // Normally the path will be manhattan and only one of
@@ -551,9 +563,9 @@ void pathvia(FILE *cmd, int layer, int x, int y, int lastx, int lasty)
        // route to the via.
 
        if (x != lastx)
-	  pathto(cmd, x, y, TRUE, lastx, y);
+	  pathto(cmd, x, y, TRUE, lastx, y, invscale);
        if (y != lasty)
-	  pathto(cmd, x, y, FALSE, x, lasty);
+	  pathto(cmd, x, y, FALSE, x, lasty, invscale);
     }
     fprintf(cmd, "%s ", s);
     Pathon = 0;
@@ -1674,7 +1686,7 @@ ROUTE createemptyroute()
 /*--------------------------------------------------------------*/
 
 int
-emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
+emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale, int iscale)
 {
    SEG seg, saveseg, lastseg;
    ROUTE rt;
@@ -1688,6 +1700,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
    float offset1, offset2;
    int stubroute = 0;
    u_char cancel;
+   double invscale = (double)(1.0 / (double)iscale); 
 
    int viaOffsetX[MAX_LAYERS][2];
    int viaOffsetY[MAX_LAYERS][2];
@@ -1883,8 +1896,8 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 	       }
 
 	       if (cancel == FALSE) {
-		  pathstart(Cmd, layer, x2, y2, special, oscale);
-		  pathto(Cmd, x, y, horizontal, x2, y2);
+		  pathstart(Cmd, layer, x2, y2, special, oscale, invscale);
+		  pathto(Cmd, x, y, horizontal, x2, y2, invscale);
 	       }
 	       lastx = x;
 	       lasty = y;
@@ -1984,7 +1997,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 	       case ST_WIRE:
 		  if (Pathon != 1) {	// 1st point of route seg
 		     if (special == (u_char)0) {
-			pathstart(Cmd, seg->layer, x, y, (u_char)0, oscale);
+			pathstart(Cmd, seg->layer, x, y, (u_char)0, oscale, invscale);
 			lastx = x;
 			lasty = y;
 		     }
@@ -2016,7 +2029,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		     horizontal = FALSE;
 		  }
 		  if (special == (u_char)0) {
-		     pathto(Cmd, x2, y2, horizontal, lastx, lasty);
+		     pathto(Cmd, x2, y2, horizontal, lastx, lasty, invscale);
 		     lastx = x2;
 		     lasty = y2;
 		  }
@@ -2035,73 +2048,81 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		     if (viaOffsetX[layer][0] > 0) {
 			if (seg->x1 > 0 && ((tdir = (Obs[layer][OGRID(seg->x1 - 1,
 				seg->y1, layer)] & ~PINOBSTRUCTMASK)) != 
-				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+				(net->netnum | ROUTED_NET)) &&
+				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x + viaOffsetX[layer][0],
-					y, lastx, lasty);
+					y, lastx, lasty, invscale);
 			}
 			else if ((seg->x1 < NumChannelsX[layer] - 1)
 				&& ((tdir = (Obs[layer][OGRID(seg->x1 + 1, seg->y1,
 				layer)] & ~PINOBSTRUCTMASK)) != 
-				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+				(net->netnum | ROUTED_NET)) &&
+				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x - viaOffsetX[layer][0],
-					y, lastx, lasty);
+					y, lastx, lasty, invscale);
 			}
 			else
-			    pathvia(Cmd, layer, x, y, lastx, lasty);
+			    pathvia(Cmd, layer, x, y, lastx, lasty, invscale);
 		     }
 		     else if (viaOffsetY[layer][0] > 0) {
 			if (seg->y1 > 0 && ((tdir = (Obs[layer][OGRID(seg->x1,
 				seg->y1 - 1, layer)] & ~PINOBSTRUCTMASK)) != 
-				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+				(net->netnum | ROUTED_NET)) &&
+				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x, y - viaOffsetY[layer][0],
-					lastx, lasty);
+					lastx, lasty, invscale);
 			}
 			else if ((seg->y1 < NumChannelsY[layer] - 1)
 				&& ((tdir = (Obs[layer][OGRID(seg->x1, seg->y1 + 1,
 				layer)] & ~PINOBSTRUCTMASK)) != 
-				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+				(net->netnum | ROUTED_NET)) &&
+				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x, y - viaOffsetY[layer][0],
-					lastx, lasty);
+					lastx, lasty, invscale);
 			}
 			else
-			    pathvia(Cmd, layer, x, y, lastx, lasty);
+			    pathvia(Cmd, layer, x, y, lastx, lasty, invscale);
 		     }
 		     else if (viaOffsetX[layer][1] > 0) {
 			if (seg->x1 > 0 && ((tdir = (Obs[layer + 1][OGRID(seg->x1 - 1,
 				seg->y1, layer + 1)] & ~PINOBSTRUCTMASK)) != 
-				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+				(net->netnum | ROUTED_NET)) &&
+				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x + viaOffsetX[layer][1],
-					y, lastx, lasty);
+					y, lastx, lasty, invscale);
 			}
 			else if ((seg->x1 < NumChannelsX[layer + 1] - 1)
 				&& ((tdir = (Obs[layer + 1][OGRID(seg->x1 + 1, seg->y1,
 				layer + 1)] & ~PINOBSTRUCTMASK)) != 
-				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+				(net->netnum | ROUTED_NET)) &&
+				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x - viaOffsetX[layer][1],
-					y, lastx, lasty);
+					y, lastx, lasty, invscale);
 			}
 			else
-			    pathvia(Cmd, layer, x, y, lastx, lasty);
+			    pathvia(Cmd, layer, x, y, lastx, lasty, invscale);
 		     }
 		     else if (viaOffsetY[layer][1] > 0) {
 			if (seg->y1 > 0 && ((tdir = (Obs[layer + 1][OGRID(seg->x1,
 				seg->y1 - 1, layer + 1)] & ~PINOBSTRUCTMASK)) != 
-				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+				(net->netnum | ROUTED_NET)) &&
+				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x, y - viaOffsetY[layer][1],
-					lastx, lasty);
+					lastx, lasty, invscale);
 			}
 			else if ((seg->y1 < NumChannelsY[layer + 1] - 1)
 				&& ((tdir = (Obs[layer][OGRID(seg->x1, seg->y1 + 1,
 				layer + 1)] & ~PINOBSTRUCTMASK)) != 
-				(net->netnum | ROUTED_NET)) && (tdir & ROUTED_NET)) {
+				(net->netnum | ROUTED_NET)) &&
+				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x, y - viaOffsetY[layer][1],
-					lastx, lasty);
+					lastx, lasty, invscale);
 			}
 			else
-			    pathvia(Cmd, layer, x, y, lastx, lasty);
+			    pathvia(Cmd, layer, x, y, lastx, lasty, invscale);
 		     }
 		     else
-			pathvia(Cmd, layer, x, y, lastx, lasty);
+			pathvia(Cmd, layer, x, y, lastx, lasty, invscale);
 
 		     lastx = x;
 		     lasty = y;
@@ -2265,11 +2286,11 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 		}
 		if (cancel == FALSE) {
 		   if (Pathon != 1) {
-		      pathstart(Cmd, layer, x, y, special, oscale);
+		      pathstart(Cmd, layer, x, y, special, oscale, invscale);
 		      lastx = x;
 		      lasty = y;
 		   }
-		   pathto(Cmd, x2, y2, horizontal, lastx, lasty);
+		   pathto(Cmd, x2, y2, horizontal, lastx, lasty, invscale);
 		   lastx = x2;
 		   lasty = y2;
 		}
@@ -2295,7 +2316,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale)
 /*   AUTHOR and DATE: steve beccue      Mon Aug 11 2003		*/
 /*--------------------------------------------------------------*/
 
-void emit_routes(char *filename, double oscale)
+void emit_routes(char *filename, double oscale, int iscale)
 {
     FILE *Cmd;
     int i, j, numnets;
@@ -2407,7 +2428,7 @@ void emit_routes(char *filename, double oscale)
 	  /* Add last net terminal, without the semicolon */
 	  fputs(line, Cmd);
 
-	  stubroute += emit_routed_net(Cmd, net, (u_char)0, oscale);
+	  stubroute += emit_routed_net(Cmd, net, (u_char)0, oscale, iscale);
 	  fprintf(Cmd, ";\n");
        }
     }
@@ -2436,7 +2457,7 @@ void emit_routes(char *filename, double oscale)
        net = Nlnets;
        for (i = 0; i < stubroute; i++) {
           for (; net; net = net->next) {
-	     if (emit_routed_net(Cmd, net, (u_char)1, oscale) > 0) {
+	     if (emit_routed_net(Cmd, net, (u_char)1, oscale, iscale) > 0) {
 		if (i < stubroute - 1) {
 		   fprintf(Cmd, " ;\n- stubroute%d\n", i + 2);
 		}
