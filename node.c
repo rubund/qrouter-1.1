@@ -317,6 +317,72 @@ double get_clear(int lay, int horiz, DSEG rect) {
 }
 
 /*--------------------------------------------------------------*/
+/* Find the distance from a point to the edge of a clearance	*/
+/* around a rectangle.  To satisfy euclidean distance rules, 	*/
+/* the clearance is clrx on the left and right sides of the	*/
+/* rectangle, clry on the top and bottom sides, and rounded on	*/
+/* the corners.							*/
+/*								*/
+/* Return 1 if point passes clearance test, 0 if not.		*/
+/*								*/
+/* This routine not currently being used, but probably will	*/
+/* need to be, eventually, to get a correct evaluation of	*/
+/* tightly-spaced taps that violate manhattan rules but pass	*/
+/* euclidean rules.						*/
+/*--------------------------------------------------------------*/
+
+char point_clearance_to_rect(double dx, double dy, DSEG ds,
+	double clrx, double clry)
+{
+   double delx, dely, dist, xp, yp, alpha, yab;
+   struct dseg_ dexp;
+
+   dexp.x1 = ds->x1 - clrx;
+   dexp.x2 = ds->x2 + clrx;
+   dexp.y1 = ds->y1 - clry;
+   dexp.y2 = ds->y2 + clry;
+
+   /* If the point is between ds top and bottom, distance is	*/
+   /* simple.							*/
+
+   if (dy <= ds->y2 && dy >= ds->y1) {
+      if (dx < dexp.x1)
+	return (dexp.x1 - dx) > 0 ? 1 : 0;
+      else if (dx > dexp.x2)
+	return (dx - dexp.x2) > 0 ? 1 : 0;
+      else
+	return 0;	// Point is inside rect
+   }
+
+   /* Likewise if the point is between ds right and left	*/
+
+   if (dx <= ds->x2 && dx >= ds->x1) {
+      if (dy < dexp.y1)
+	return (dexp.y1 - dy) > 0 ? 1 : 0;
+      else if (dy > dexp.y2)
+	return (dy - dexp.y2) > 0 ? 1 : 0;
+      else
+	return 0;	// Point is inside rect
+   }
+
+   /* Treat corners individually */
+
+   if (dy > ds->y2)
+      yab = dy - ds->y2;
+   else if (dy < ds->y1)
+      yab = ds->y1 - dy;
+
+   if (dx > ds->x2)
+      delx = dx - ds->x2;
+   else if (dx < ds->x1)
+      delx = ds->x1 - dx;
+
+   dely = yab * (clrx / clry);	// Normalize y clearance to x
+   dist = delx * delx + dely * dely;
+   return (dist > (clrx * clrx)) ? 1 : 0;
+}
+
+/*--------------------------------------------------------------*/
 /* create_obstructions_from_gates()				*/
 /*								*/
 /*  Fills in the Obs[][] grid from obstructions that were	*/
@@ -1259,6 +1325,72 @@ void tap_to_tap_interactions()
 		      }
 		   }
 		}
+	     }
+	  }
+       }
+    }
+}
+
+/*--------------------------------------------------------------*/
+/* make_routable()						*/
+/*								*/
+/*  In the case that a node can't be routed because it has no	*/
+/*  available tap points, but there is tap geometry recorded	*/
+/*  for the node, then take the first available grid location	*/
+/*  near the tap.  This, of course, bypasses all of qrouter's	*/
+/*  DRC checks.  But it is only meant to be a stop-gap measure	*/
+/*  to get qrouter to complete all routes, and may work in	*/
+/*  cases where, say, the tap passes euclidean rules but not	*/
+/*  manhattan rules.						*/
+/*--------------------------------------------------------------*/
+
+void
+make_routable(NODE node)
+{
+    GATE g;
+    DSEG ds;
+    int i, gridx, gridy, net;
+    double dx, dy;
+
+    /* The database is not organized to find tap points	*/
+    /* from nodes, so we have to search for the node.	*/
+    /* Fortunately this routine isn't normally called.	*/
+
+    for (g = Nlgates; g; g = g->next) {
+       for (i = 0; i < g->nodes; i++) {
+	  if (g->noderec[i] == node) {
+             for (ds = g->taps[i]; ds; ds = ds->next) {
+		gridx = (int)((ds->x1 - Xlowerbound) / PitchX[ds->layer]) - 1;
+		while (1) {
+		   dx = (gridx * PitchX[ds->layer]) + Xlowerbound;
+		   if (dx > ds->x2 || gridx >= NumChannelsX[ds->layer]) break;
+		   else if (dx >= ds->x1 && gridx >= 0) {
+		      gridy = (int)((ds->y1 - Ylowerbound) / PitchY[ds->layer]) - 1;
+		      while (1) {
+		         dy = (gridy * PitchY[ds->layer]) + Ylowerbound;
+		         if (dy > ds->y2 || gridy >= NumChannelsY[ds->layer]) break;
+
+			 // Area inside defined pin geometry
+
+			 if (dy > ds->y1 && gridy >= 0) {
+			    int orignet = Obs[ds->layer][OGRID(gridx,
+					gridy, ds->layer)];
+
+			    if (orignet & NO_NET) {
+				Obs[ds->layer][OGRID(gridx, gridy, ds->layer)] =
+					g->netnum[i];
+				Nodeloc[ds->layer][OGRID(gridx, gridy, ds->layer)] =
+					node;
+				Nodesav[ds->layer][OGRID(gridx, gridy, ds->layer)] =
+					node;
+				return;
+			    }
+			 }
+			 gridy++;
+		      }
+		   }
+		   gridx++;
+	        }
 	     }
 	  }
        }

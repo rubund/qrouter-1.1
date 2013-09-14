@@ -19,6 +19,7 @@ void create_obstructions_from_nodes( void );
 void create_obstructions_from_gates( void );
 void create_obstructions_from_variable_pitch( void );
 void tap_to_tap_interactions( void );
+void make_routable( NODE node );
 void adjust_stub_lengths( void );
 int isconnected( NODE node1, NODE node2 );
 int isconnectedrecurse( NODE node1, NODE node2 );

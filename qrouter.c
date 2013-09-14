@@ -53,6 +53,7 @@ int   Numgates = 0;
 int   Numpins = 0;
 int   Verbose = 0;
 int   keepTrying = 0;
+int   forceRoutable = 0;
 
 int   pwrbus_src;
 
@@ -179,7 +180,7 @@ main(int argc, char *argv[])
    Filename[0] = 0;
    DEFfilename[0] = 0;
 
-   while ((i = getopt(argc, argv, "c:i:hkv:p:g:r:")) != -1) {
+   while ((i = getopt(argc, argv, "c:i:hkfv:p:g:r:")) != -1) {
       switch (i) {
 	 case 'c':
 	    configfile = strdup(optarg);
@@ -206,6 +207,9 @@ main(int argc, char *argv[])
 	 case 'h':
 	    helpmessage();
 	    exit(0);
+	    break;
+	 case 'f':
+	    forceRoutable = 1;
 	    break;
 	 case 'k':
 	    keepTrying = 1;
@@ -1250,6 +1254,7 @@ int route_segs(NET net, ROUTE rt, u_char stage)
 
      if (rval == -2) {
         printf("Node of net %s has no tap points---unable to route!\n", n1->netname);
+	if (forceRoutable) make_routable(n1);
         return -1;
      }
   }
@@ -1276,6 +1281,7 @@ int route_segs(NET net, ROUTE rt, u_char stage)
         }
         else if (rval == -2) {
            printf("Node of net %s has no tap points---unable to route!\n", n2->netname);
+	   if (forceRoutable) make_routable(n2);
 	   if (result == 0) result = -1;
         }
      }
