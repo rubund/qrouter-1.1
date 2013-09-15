@@ -552,7 +552,13 @@ void pathvia(FILE *cmd, int layer, int x, int y, int lastx, int lasty,
     char *s;
     char checkersign = (gridx + gridy + layer) & 0x01;
 
-    s = ((checkersign == 0) || (ViaY[layer] == NULL)) ? ViaX[layer] : ViaY[layer];
+    if ((ViaPattern == VIA_PATTERN_NONE) || (ViaY[layer] == NULL))
+	s = ViaX[layer];
+    else if (ViaPattern == VIA_PATTERN_NORMAL)
+	s = (checkersign == 0) ?  ViaX[layer] : ViaY[layer];
+    else
+	s = (checkersign == 0) ?  ViaY[layer] : ViaX[layer];
+
     if (Pathon <= 0) {
        if (Pathon == -1)
 	  fprintf(cmd, "+ ROUTED ");

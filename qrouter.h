@@ -44,6 +44,7 @@ typedef unsigned long  u_long;
 /* Max reasonable line length */
 #define MAXLINE         256
 
+/* Default configuration filename */
 #define  CONFIGFILENAME        "route.cfg" 
 
 // define possible gate orientations
@@ -60,6 +61,11 @@ typedef unsigned long  u_long;
 #define WEST	(u_char)4
 #define UP	(u_char)5
 #define DOWN	(u_char)6
+
+// define types of via checkerboard patterns
+#define VIA_PATTERN_NONE	-1
+#define VIA_PATTERN_NORMAL	 0
+#define VIA_PATTERN_INVERT	 1
 
 // define a structure containing x, y, and layer
 

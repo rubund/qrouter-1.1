@@ -11,8 +11,6 @@
 
 #ifndef CONFIG_H
 
-#define MAXLINE    256
-
 extern int     Num_layers;
 
 extern double  PathWidth[MAX_LAYERS];    // width of the paths
@@ -26,6 +24,7 @@ extern int     NumChannelsY[MAX_LAYERS];
 extern int     Vert[MAX_LAYERS];        // 1 if verticle, 0 if horizontal
 extern int     Numpasses;               // number of times to iterate in route_segs
 extern char    StackedContacts;	  	// Number of vias that can be stacked together
+extern char    ViaPattern;		// Type of via patterning to use
 
 extern double  Xlowerbound;  // Bounding Box of routes
 extern double  Xupperbound;      

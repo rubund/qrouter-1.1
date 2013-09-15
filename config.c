@@ -12,6 +12,8 @@
 /* to the LEF file with information on standard cell macros.	*/
 /*--------------------------------------------------------------*/
 
+#define _GNU_SOURCE	// for strcasestr(), see man page
+
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
@@ -39,6 +41,8 @@ int     Vert[MAX_LAYERS];		// 1 if vertical, 0 if horizontal
 int     Numpasses = 10;			// number of times to iterate in route_segs
 char	StackedContacts = MAX_LAYERS;	// Value is number of contacts that may
 					// be stacked on top of each other.
+char	ViaPattern = VIA_PATTERN_NONE;	// Patterning to be used for vias based
+					// on grid position (i.e., checkerboarding)
 
 double  Xlowerbound=0.0;		// Bounding Box of routes, in microns
 double  Xupperbound=0.0;      
@@ -64,8 +68,6 @@ char    *ViaY[MAX_LAYERS];
 /*      RETURNS: number of lines successfully read		*/
 /* SIDE EFFECTS: loads Global configuration variables		*/
 /*--------------------------------------------------------------*/
-
-#define MAXLINE    256
 
 int read_config(FILE *fconfig)
 {
@@ -292,6 +294,14 @@ int read_config(FILE *fconfig)
 	    // not possible. . .
 	    if (StackedContacts == 0) StackedContacts = 1;
 	}
+
+	// Look for via patterning specifications
+	if (strcasestr(lineptr, "via pattern") != NULL) {
+	    if (strcasestr(lineptr + 12, "normal") != NULL)
+		ViaPattern = VIA_PATTERN_NORMAL;
+	    else if (strcasestr(lineptr + 12, "invert") != NULL)
+		ViaPattern = VIA_PATTERN_INVERT;
+ 	}
 
 	if ((i = sscanf(lineptr, "obstruction %lf %lf %lf %lf %s\n",
 			&darg, &darg2, &darg3, &darg4, &sarg)) == 5) {
