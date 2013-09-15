@@ -39,7 +39,8 @@ extern int     XverCost;
 extern int     BlockCost;
 extern int     ConflictCost;
 
-extern char    Via[MAX_LAYERS][MAX_NAME_LEN];
+extern char    *ViaX[MAX_LAYERS];
+extern char    *ViaY[MAX_LAYERS];
 
 int  read_config(FILE *configfileptr);
 

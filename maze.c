@@ -1072,6 +1072,7 @@ int commit_proute(ROUTE rt, GRIDP *ept, u_char stage)
 			newlr->next = lrnext;
 			free(lrppre);
 			free(newlr2);
+			lrppre = lrnext;	// ?
 		     }
 		     else
 		        newlr2->next = lrppre;

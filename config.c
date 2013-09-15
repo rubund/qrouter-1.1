@@ -54,7 +54,8 @@ int     BlockCost = 25;            // Cost of a crossover when node has
 int 	ConflictCost = 50;	   // Cost of shorting another route
 				   // during the rip-up and reroute stage
 
-char    Via[MAX_LAYERS][MAX_NAME_LEN];
+char    *ViaX[MAX_LAYERS];
+char    *ViaY[MAX_LAYERS];
 
 /*--------------------------------------------------------------*/
 /* read_config - read in the config file        		*/
@@ -84,7 +85,9 @@ int read_config(FILE *fconfig)
 
     if (Firstcall) {
 	for (i = 0; i < MAX_LAYERS; i++) {
-	    sprintf(Via[i], "via%d%d", i + 1, i + 2);
+	    sprintf(line, "via%d%d", i + 1, i + 2);
+	    ViaX[i] = strdup(line);
+	    ViaY[i] = NULL;
 	}
 
 	DontRoute = (STRING)NULL;

@@ -547,11 +547,12 @@ void pathto(FILE *cmd, int x, int y, int horizontal, int lastx, int lasty,
 /*--------------------------------------------------------------*/
 
 void pathvia(FILE *cmd, int layer, int x, int y, int lastx, int lasty,
-		double invscale)
+		int gridx, int gridy, double invscale)
 {
     char *s;
+    char checkersign = (gridx + gridy + layer) & 0x01;
 
-    s = Via[layer];
+    s = ((checkersign == 0) || (ViaY[layer] == NULL)) ? ViaX[layer] : ViaY[layer];
     if (Pathon <= 0) {
        if (Pathon == -1)
 	  fprintf(cmd, "+ ROUTED ");
@@ -2057,7 +2058,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale, int iscale)
 				(net->netnum | ROUTED_NET)) &&
 				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x + viaOffsetX[layer][0],
-					y, lastx, lasty, invscale);
+					y, lastx, lasty, seg->x1, seg->y1, invscale);
 			}
 			else if ((seg->x1 < NumChannelsX[layer] - 1)
 				&& ((tdir = (Obs[layer][OGRID(seg->x1 + 1, seg->y1,
@@ -2065,10 +2066,11 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale, int iscale)
 				(net->netnum | ROUTED_NET)) &&
 				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x - viaOffsetX[layer][0],
-					y, lastx, lasty, invscale);
+					y, lastx, lasty, seg->x1, seg->y1, invscale);
 			}
 			else
-			    pathvia(Cmd, layer, x, y, lastx, lasty, invscale);
+			    pathvia(Cmd, layer, x, y, lastx, lasty, seg->x1,
+					seg->y1, invscale);
 		     }
 		     else if (viaOffsetY[layer][0] > 0) {
 			if (seg->y1 > 0 && ((tdir = (Obs[layer][OGRID(seg->x1,
@@ -2076,7 +2078,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale, int iscale)
 				(net->netnum | ROUTED_NET)) &&
 				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x, y - viaOffsetY[layer][0],
-					lastx, lasty, invscale);
+					lastx, lasty, seg->x1, seg->y1, invscale);
 			}
 			else if ((seg->y1 < NumChannelsY[layer] - 1)
 				&& ((tdir = (Obs[layer][OGRID(seg->x1, seg->y1 + 1,
@@ -2084,10 +2086,11 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale, int iscale)
 				(net->netnum | ROUTED_NET)) &&
 				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x, y - viaOffsetY[layer][0],
-					lastx, lasty, invscale);
+					lastx, lasty, seg->x1, seg->y1, invscale);
 			}
 			else
-			    pathvia(Cmd, layer, x, y, lastx, lasty, invscale);
+			    pathvia(Cmd, layer, x, y, lastx, lasty, seg->x1,
+					seg->y1, invscale);
 		     }
 		     else if (viaOffsetX[layer][1] > 0) {
 			if (seg->x1 > 0 && ((tdir = (Obs[layer + 1][OGRID(seg->x1 - 1,
@@ -2095,7 +2098,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale, int iscale)
 				(net->netnum | ROUTED_NET)) &&
 				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x + viaOffsetX[layer][1],
-					y, lastx, lasty, invscale);
+					y, lastx, lasty, seg->x1, seg->y1, invscale);
 			}
 			else if ((seg->x1 < NumChannelsX[layer + 1] - 1)
 				&& ((tdir = (Obs[layer + 1][OGRID(seg->x1 + 1, seg->y1,
@@ -2103,10 +2106,11 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale, int iscale)
 				(net->netnum | ROUTED_NET)) &&
 				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x - viaOffsetX[layer][1],
-					y, lastx, lasty, invscale);
+					y, lastx, lasty, seg->x1, seg->y1, invscale);
 			}
 			else
-			    pathvia(Cmd, layer, x, y, lastx, lasty, invscale);
+			    pathvia(Cmd, layer, x, y, lastx, lasty, seg->x1,
+					seg->y1, invscale);
 		     }
 		     else if (viaOffsetY[layer][1] > 0) {
 			if (seg->y1 > 0 && ((tdir = (Obs[layer + 1][OGRID(seg->x1,
@@ -2114,7 +2118,7 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale, int iscale)
 				(net->netnum | ROUTED_NET)) &&
 				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x, y - viaOffsetY[layer][1],
-					lastx, lasty, invscale);
+					lastx, lasty, seg->x1, seg->y1, invscale);
 			}
 			else if ((seg->y1 < NumChannelsY[layer + 1] - 1)
 				&& ((tdir = (Obs[layer][OGRID(seg->x1, seg->y1 + 1,
@@ -2122,13 +2126,15 @@ emit_routed_net(FILE *Cmd, NET net, u_char special, double oscale, int iscale)
 				(net->netnum | ROUTED_NET)) &&
 				((tdir & (ROUTED_NET | NO_NET) == ROUTED_NET))) {
 			   pathvia(Cmd, layer, x, y - viaOffsetY[layer][1],
-					lastx, lasty, invscale);
+					lastx, lasty, seg->x1, seg->y1, invscale);
 			}
 			else
-			    pathvia(Cmd, layer, x, y, lastx, lasty, invscale);
+			    pathvia(Cmd, layer, x, y, lastx, lasty, seg->x1,
+					seg->y1, invscale);
 		     }
 		     else
-			pathvia(Cmd, layer, x, y, lastx, lasty, invscale);
+			pathvia(Cmd, layer, x, y, lastx, lasty, seg->x1,
+					seg->y1, invscale);
 
 		     lastx = x;
 		     lasty = y;

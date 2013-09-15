@@ -695,6 +695,9 @@ LefGetRouteOffset(int layer)
  * Note that Via rectangles are stored with x2 dimensions
  * because the center can be on a half-grid position; so,
  * return half the value obtained.
+ *
+ * To-do:  Differentiate between X and Y vias when doing
+ * checkerboard via patterning.
  *------------------------------------------------------------
  */
 
@@ -705,7 +708,7 @@ LefGetViaWidth(int base, int layer, int dir)
     LefList lefl;
     double width;
 
-    lefl = LefFindLayer(Via[base]);
+    lefl = LefFindLayer(ViaX[base]);
     if (lefl) {
 	if (lefl->lefClass == CLASS_VIA) {
 	    if (lefl->info.via.area.layer == layer) {
@@ -2156,6 +2159,7 @@ LefRead(inName)
     char tsave[128];
     int keyword, layer;
     float oscale;
+    double xydiff;
     LefList lefl;
     DSEG grect;
     GATE gateginfo;
@@ -2379,6 +2383,10 @@ LefRead(inName)
     /* the strings used for route output, overriding any information	*/
     /* that may have been in the route.cfg file.			*/
 
+    /* Note that this runs through all the defined vias, from last to	*/
+    /* first defined.  Check the X vs. Y dimension of the base layer.	*/
+    /* If X is longer, save as ViaX.  If Y is longer, save as ViaY.	*/
+
     for (lefl = LefInfo; lefl; lefl = lefl->next) {
 	if (lefl->lefClass == CLASS_ROUTE) {
 	    strcpy(CIFLayer[lefl->type], lefl->lefName);
@@ -2386,15 +2394,27 @@ LefRead(inName)
 	else if (lefl->lefClass == CLASS_VIA) {
 	    if (lefl->info.via.lr) {
 		layer = MAX_LAYERS;
-		if (lefl->info.via.area.layer >= 0)
+		if (lefl->info.via.area.layer >= 0) {
 		   layer = lefl->info.via.area.layer;
+		   xydiff = (lefl->info.via.area.x2 - lefl->info.via.area.x1) -
+			(lefl->info.via.area.y2 - lefl->info.via.area.y1);
+		}
 
 		for (grect = lefl->info.via.lr; grect; grect = grect->next) {
-		    if (grect->layer >= 0 && grect->layer < layer)
+		    if (grect->layer >= 0 && grect->layer < layer) {
 			layer = grect->layer;
+			xydiff = (grect->x2 - grect->x1) - (grect->y2 - grect->y1);
+		    }
 		}
 		if (layer < MAX_LAYERS) {
-		    strcpy(Via[layer], lefl->lefName);
+		    if (xydiff > -EPS) {
+			free(ViaX[layer]);
+			ViaX[layer] = strdup(lefl->lefName);      
+		    }
+		    else {
+			if (ViaY[layer] != NULL) free(ViaY[layer]);
+			ViaY[layer] = strdup(lefl->lefName);
+		    }
 		}
 	    }
 	}

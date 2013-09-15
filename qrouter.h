@@ -330,7 +330,7 @@ void   pathstart(FILE *cmd, int layer, int x, int y, u_char special, double osca
 void   pathto(FILE *cmd, int x, int y, int horizontal, int lastx, int lasty,
 			double invscale);
 void   pathvia(FILE *cmd, int layer, int x, int y, int lastx, int lasty,
-			double invscale);
+			int gridx, int gridy, double invscale);
 
 void   helpmessage();
 
