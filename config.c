@@ -286,7 +286,7 @@ int read_config(FILE *fconfig)
 	// that can be stacked upon each other.  Values 0 and 1 are both
 	// equivalent to specifying "no stack".
 
-	if ((i = sscanf(lineptr, "stack %ld", &iarg)) == 1) {
+	if ((i = sscanf(lineptr, "stack %d", &iarg)) == 1) {
 	    OK = 1; StackedContacts = iarg;
 	    // Can't let StackedContacts be zero because qrouter would
 	    // believe that all contacts are disallowed, leading to a
@@ -304,7 +304,7 @@ int read_config(FILE *fconfig)
  	}
 
 	if ((i = sscanf(lineptr, "obstruction %lf %lf %lf %lf %s\n",
-			&darg, &darg2, &darg3, &darg4, &sarg)) == 5) {
+			&darg, &darg2, &darg3, &darg4, sarg)) == 5) {
 	    OK = 1;
 	    drect = (DSEG)malloc(sizeof(struct dseg_));
 	    drect->x1 = darg;
