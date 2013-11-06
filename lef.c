@@ -1704,6 +1704,12 @@ LefReadMacro(f, mname, oscale)
     lefMacro = (GATE)malloc(sizeof(struct gate_));
     lefMacro->gatetype = strdup(mname);
     lefMacro->gatename = NULL;
+    lefMacro->obs = (DSEG)NULL;
+    lefMacro->nodes = 0;
+    lefMacro->width = 0.0;
+    lefMacro->height = 0.0;
+    lefMacro->placedX = 0.0;
+    lefMacro->placedY = 0.0;
     lefMacro->next = GateInfo;
     GateInfo = lefMacro;
 
